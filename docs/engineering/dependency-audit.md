@@ -1,5 +1,16 @@
 # Dependency audit - 2026-07-23
 
+## Phase 2 UI additions
+
+Radix UI packages are MIT licensed and support React 19. Releases were pinned to the latest mutually
+installable stable family after the registry's newer Dialog release referenced unpublished
+`@radix-ui/react-slot@1.3.1`. No override was added. Lucide React is ISC licensed and matches Figma's
+single 24 px outline icon family.
+
+Testing Library and jsdom are development-only. `axe-core` matches the Playwright axe version already
+used by the workspace. These packages support component interaction and WCAG regression tests without
+adding a production design framework.
+
 `pnpm audit --audit-level critical` exits successfully with no critical findings. Two transitive
 findings remain:
 

@@ -1,17 +1,33 @@
 @import 'tailwindcss';
+@import '../../../packages/ui/src/styles/tokens.css';
 @source '../../../packages/ui/src';
-
-:root {
-  color-scheme: light;
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  background: #f8fafc;
-  color: #0f172a;
-}
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  background: var(--pitstop-color-bg-app);
+}
+
 body {
   margin: 0;
+  background: var(--pitstop-color-bg-app);
+  color: var(--pitstop-color-text-primary);
+  font-family: var(--pitstop-font-sans);
+  font-size: var(--pitstop-type-body-medium-size);
+  line-height: var(--pitstop-type-body-medium-line);
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+::selection {
+  background: var(--pitstop-color-surface-success);
+  color: var(--pitstop-color-text-primary);
 }

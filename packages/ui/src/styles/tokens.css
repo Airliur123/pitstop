@@ -1,0 +1,171 @@
+@theme inline {
+  --font-sans: var(--pitstop-font-sans);
+
+  --color-app: var(--pitstop-color-bg-app);
+  --color-surface: var(--pitstop-color-surface-default);
+  --color-surface-brand: var(--pitstop-color-surface-brand);
+  --color-surface-brand-strong: var(--pitstop-color-surface-brand-strong);
+  --color-surface-navy: var(--pitstop-color-surface-navy);
+  --color-surface-success: var(--pitstop-color-surface-success);
+  --color-surface-warning: var(--pitstop-color-surface-warning);
+  --color-surface-danger: var(--pitstop-color-surface-danger);
+  --color-foreground: var(--pitstop-color-text-primary);
+  --color-muted: var(--pitstop-color-text-secondary);
+  --color-inverse: var(--pitstop-color-text-inverse);
+  --color-brand: var(--pitstop-color-text-brand);
+  --color-success: var(--pitstop-color-text-success);
+  --color-warning: var(--pitstop-color-text-warning);
+  --color-danger: var(--pitstop-color-text-danger);
+  --color-disabled: var(--pitstop-color-text-disabled);
+  --color-border: var(--pitstop-color-border-default);
+  --color-border-strong: var(--pitstop-color-border-strong);
+  --color-border-brand: var(--pitstop-color-border-brand);
+  --color-focus: var(--pitstop-color-focus-ring);
+  --color-interactive: var(--pitstop-color-interactive-primary);
+  --color-interactive-hover: var(--pitstop-color-interactive-primary-hover);
+  --color-interactive-active: var(--pitstop-color-interactive-primary-active);
+
+  --radius-sm: var(--pitstop-radius-small);
+  --radius-button: var(--pitstop-radius-button);
+  --radius-card: var(--pitstop-radius-card);
+  --radius-modal: var(--pitstop-radius-modal);
+
+  --shadow-card: var(--pitstop-shadow-card);
+  --shadow-floating: var(--pitstop-shadow-floating);
+  --shadow-overlay: var(--pitstop-shadow-overlay);
+}
+
+:root {
+  color-scheme: light;
+
+  /* Figma primitives: PitStop / Primitives. */
+  --pitstop-color-brand-green: #16a34a;
+  --pitstop-color-brand-green-dark: #166534;
+  --pitstop-color-brand-orange: #f97316;
+  --pitstop-color-navy-900: #0f2742;
+  --pitstop-color-slate-950: #0f172a;
+  --pitstop-color-slate-500: #64748b;
+  --pitstop-color-slate-300: #cbd5e1;
+  --pitstop-color-slate-200: #e2e8f0;
+  --pitstop-color-slate-100: #f1f5f9;
+  --pitstop-color-slate-50: #f8fafc;
+  --pitstop-color-white: #ffffff;
+  --pitstop-color-red-600: #dc2626;
+  --pitstop-color-orange-50: #fff7ed;
+  --pitstop-color-green-50: #f0fdf4;
+  --pitstop-color-amber-500: #f59e0b;
+  --pitstop-color-blue-600: #2563eb;
+  --pitstop-color-black-12: rgb(15 23 42 / 12%);
+
+  /* Accessibility primitives used only by adjusted semantic roles. */
+  --pitstop-color-green-700: #15803d;
+  --pitstop-color-green-800: #166534;
+  --pitstop-color-orange-800: #9a3412;
+
+  /* Figma semantic colors plus WCAG-adjusted interactive roles. */
+  --pitstop-color-bg-app: var(--pitstop-color-slate-50);
+  --pitstop-color-surface-default: var(--pitstop-color-white);
+  --pitstop-color-surface-brand: var(--pitstop-color-brand-green);
+  --pitstop-color-surface-brand-strong: var(--pitstop-color-brand-green-dark);
+  --pitstop-color-surface-navy: var(--pitstop-color-navy-900);
+  --pitstop-color-surface-success: var(--pitstop-color-green-50);
+  --pitstop-color-surface-warning: var(--pitstop-color-orange-50);
+  --pitstop-color-surface-danger: var(--pitstop-color-red-600);
+  --pitstop-color-text-primary: var(--pitstop-color-slate-950);
+  --pitstop-color-text-secondary: var(--pitstop-color-slate-500);
+  --pitstop-color-text-inverse: var(--pitstop-color-white);
+  --pitstop-color-text-brand: var(--pitstop-color-brand-green-dark);
+  --pitstop-color-text-success: var(--pitstop-color-brand-green-dark);
+  --pitstop-color-text-warning: var(--pitstop-color-orange-800);
+  --pitstop-color-text-danger: var(--pitstop-color-red-600);
+  --pitstop-color-text-disabled: var(--pitstop-color-slate-300);
+  --pitstop-color-border-default: var(--pitstop-color-slate-200);
+  --pitstop-color-border-strong: var(--pitstop-color-slate-300);
+  --pitstop-color-border-brand: var(--pitstop-color-brand-green);
+  --pitstop-color-icon-default: var(--pitstop-color-slate-500);
+  --pitstop-color-icon-brand: var(--pitstop-color-brand-green);
+  --pitstop-color-icon-inverse: var(--pitstop-color-white);
+  --pitstop-color-status-open: var(--pitstop-color-brand-green);
+  --pitstop-color-status-soon: var(--pitstop-color-amber-500);
+  --pitstop-color-status-closed: var(--pitstop-color-slate-500);
+  --pitstop-color-status-unknown: var(--pitstop-color-slate-300);
+  --pitstop-color-focus-ring: var(--pitstop-color-blue-600);
+  --pitstop-color-interactive-primary: var(--pitstop-color-green-700);
+  --pitstop-color-interactive-primary-hover: var(--pitstop-color-brand-green-dark);
+  --pitstop-color-interactive-primary-active: var(--pitstop-color-green-800);
+
+  /* Figma dimensions. */
+  --pitstop-space-1: 0.25rem;
+  --pitstop-space-2: 0.5rem;
+  --pitstop-space-3: 0.75rem;
+  --pitstop-space-4: 1rem;
+  --pitstop-space-5: 1.25rem;
+  --pitstop-space-6: 1.5rem;
+  --pitstop-space-8: 2rem;
+  --pitstop-space-10: 2.5rem;
+  --pitstop-space-12: 3rem;
+  --pitstop-space-16: 4rem;
+  --pitstop-radius-none: 0;
+  --pitstop-radius-small: 0.5rem;
+  --pitstop-radius-button: 0.75rem;
+  --pitstop-radius-card: 1.125rem;
+  --pitstop-radius-modal: 1.5rem;
+  --pitstop-radius-full: 62.4375rem;
+  --pitstop-size-tap-min: 3rem;
+  --pitstop-size-icon-sm: 1rem;
+  --pitstop-size-icon-md: 1.25rem;
+  --pitstop-size-icon-lg: 1.5rem;
+
+  /* Figma typography. Inter falls back locally and is never fetched during tests/builds. */
+  --pitstop-font-sans:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --pitstop-type-display-xl-size: 2.5rem;
+  --pitstop-type-display-xl-line: 3rem;
+  --pitstop-type-heading-h1-size: 1.75rem;
+  --pitstop-type-heading-h1-line: 2.25rem;
+  --pitstop-type-heading-h2-size: 1.375rem;
+  --pitstop-type-heading-h2-line: 1.75rem;
+  --pitstop-type-heading-h3-size: 1.125rem;
+  --pitstop-type-heading-h3-line: 1.5rem;
+  --pitstop-type-body-large-size: 1rem;
+  --pitstop-type-body-large-line: 1.5rem;
+  --pitstop-type-body-medium-size: 0.875rem;
+  --pitstop-type-body-medium-line: 1.25rem;
+  --pitstop-type-body-small-size: 0.8125rem;
+  --pitstop-type-body-small-line: 1.125rem;
+  --pitstop-type-label-large-size: 0.9375rem;
+  --pitstop-type-label-large-line: 1.25rem;
+  --pitstop-type-label-medium-size: 0.8125rem;
+  --pitstop-type-label-medium-line: 1.125rem;
+  --pitstop-type-numeric-size: 1.125rem;
+  --pitstop-type-numeric-line: 1.5rem;
+
+  /* Figma effect styles. */
+  --pitstop-shadow-card: 0 4px 16px rgb(15 23 42 / 8%);
+  --pitstop-shadow-floating: 0 12px 32px -4px rgb(15 23 42 / 14%);
+  --pitstop-shadow-overlay: 0 20px 48px -8px rgb(15 23 42 / 18%);
+
+  /* Foundation-only behavior tokens; Figma does not define an alternate theme. */
+  --pitstop-border-width: 1px;
+  --pitstop-duration-fast: 120ms;
+  --pitstop-duration-normal: 200ms;
+  --pitstop-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --pitstop-easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --pitstop-z-sticky: 20;
+  --pitstop-z-overlay: 40;
+  --pitstop-z-modal: 50;
+  --pitstop-mobile-gutter: 1rem;
+  --pitstop-admin-sidebar-width: 16.25rem;
+  --pitstop-admin-content-max: 90rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

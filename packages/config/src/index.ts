@@ -32,12 +32,14 @@ export const webEnvironmentSchema = z.object({
   NODE_ENV: nodeEnvironmentSchema,
   WEB_PORT: portSchema,
   NEXT_PUBLIC_API_BASE_URL: urlSchema,
+  NEXT_PUBLIC_ENABLE_UI_CATALOG: booleanStringSchema.optional().default(false),
 });
 
 export const adminEnvironmentSchema = z.object({
   NODE_ENV: nodeEnvironmentSchema,
   ADMIN_PORT: portSchema,
   NEXT_PUBLIC_API_BASE_URL: urlSchema,
+  NEXT_PUBLIC_ENABLE_UI_CATALOG: booleanStringSchema.optional().default(false),
 });
 
 export const apiEnvironmentSchema = z.object({
