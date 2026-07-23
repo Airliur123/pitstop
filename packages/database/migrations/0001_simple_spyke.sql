@@ -1,0 +1,1 @@
+ALTER TABLE `menus` ADD CONSTRAINT `uq_menus_place_name` UNIQUE(`place_id`,`name`);

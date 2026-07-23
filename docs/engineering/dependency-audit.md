@@ -15,3 +15,9 @@ The PostCSS advisory GHSA-qx2v-qp2m-jg93 was remediated with the documented work
 
 Deprecated transitive notices remain for `@esbuild-kit/core-utils`, `@esbuild-kit/esm-loader`, and
 `glob@10.5.0`; all arrive through current direct dependencies and are not changed independently.
+
+## Phase 1 temporary risk acceptance
+
+The high `sharp` finding is accepted only for Phase 1 local-development database work. It must be
+remediated before production deployment, user-controlled image processing, or Phase 2 media work.
+This records the technical basis and does not substitute for release-owner approval.

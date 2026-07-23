@@ -24,7 +24,11 @@
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs --follow",
-    "docker:reset": "docker compose down --volumes --remove-orphans"
+    "docker:reset": "docker compose down --volumes --remove-orphans",
+    "db:generate": "pnpm --filter @pitstop/database db:generate",
+    "db:migrate": "pnpm --filter @pitstop/database db:migrate",
+    "db:seed": "pnpm --filter @pitstop/database db:seed",
+    "db:test": "pnpm --filter @pitstop/database db:test"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
