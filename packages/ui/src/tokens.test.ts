@@ -28,6 +28,7 @@ test('WCAG-adjusted primary action text reaches AA contrast', () => {
 
 test('WCAG-adjusted warning text reaches AA contrast', () => {
   expect(contrast('#9a3412', '#fff7ed')).toBeGreaterThanOrEqual(4.5);
+  expect(contrast('#0f172a', '#fff7ed')).toBeGreaterThanOrEqual(4.5);
 });
 
 test('primary and secondary text tokens reach AA contrast on the app background', () => {

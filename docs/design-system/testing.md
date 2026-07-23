@@ -3,6 +3,8 @@
 ## Commands
 
 ```bash
+pnpm exec playwright install chromium
+sudo pnpm exec playwright install-deps chromium
 pnpm --filter @pitstop/ui test
 pnpm test:e2e
 pnpm format:check
@@ -12,6 +14,10 @@ pnpm test
 pnpm build
 pnpm audit --audit-level critical
 ```
+
+The two Playwright installation commands are machine prerequisites, not workspace dependencies.
+Install the Chromium browser once per Playwright version. Install the Linux system libraries when
+the browser reports a missing shared library; the second command may require administrator access.
 
 ## Coverage
 

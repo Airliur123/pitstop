@@ -107,11 +107,14 @@ test('sheet supports keyboard open and Escape close', async () => {
       Konten sheet
     </Sheet>,
   );
+  const trigger = screen.getByRole('button', { name: 'Buka sheet' });
   await user.tab();
+  expect(trigger).toHaveFocus();
   await user.keyboard('{Enter}');
   expect(screen.getByRole('dialog', { name: 'Sheet preview' })).toBeVisible();
   await user.keyboard('{Escape}');
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(trigger).toHaveFocus();
 });
 
 test('tabs support arrow-key navigation', async () => {

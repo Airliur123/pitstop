@@ -8,6 +8,7 @@ const workspaceRoot = fileURLToPath(new URL('../..', import.meta.url));
 const environment = parseAdminEnvironment(loadWorkspaceEnvironment(workspaceRoot));
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ['127.0.0.1'],
   reactStrictMode: true,
   transpilePackages: ['@pitstop/config', '@pitstop/contracts', '@pitstop/ui'],
   env: {

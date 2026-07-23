@@ -167,7 +167,9 @@ export function AdminStatCard({
         tone === 'danger' && 'border-danger',
       )}
     >
-      <span className="text-sm text-muted">{label}</span>
+      <span className={cn('text-sm text-muted', tone === 'warning' && 'text-foreground')}>
+        {label}
+      </span>
       <strong
         className={cn(
           'text-[2rem] leading-10',

@@ -48,13 +48,15 @@ test('catalog dialog opens, closes with Escape, and restores focus', async ({ pa
   await expect(trigger).toBeFocused();
 });
 
-test('catalog has no serious or critical axe violations', async ({ page }) => {
-  await page.goto('/dev/ui');
-  const results = await new AxeBuilder({ page }).include('main').analyze();
-  const blocking = results.violations.filter(
-    (violation) => violation.impact === 'critical' || violation.impact === 'serious',
-  );
-  expect(blocking).toEqual([]);
+test('shells and catalogs have no serious or critical axe violations', async ({ page }) => {
+  for (const route of routes) {
+    await page.goto(route);
+    const results = await new AxeBuilder({ page }).include('main').analyze();
+    const blocking = results.violations.filter(
+      (violation) => violation.impact === 'critical' || violation.impact === 'serious',
+    );
+    expect(blocking, `${route} axe violations`).toEqual([]);
+  }
 });
 
 test('shells and catalogs produce no console errors or hydration warnings', async ({ page }) => {

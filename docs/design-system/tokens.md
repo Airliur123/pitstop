@@ -51,7 +51,8 @@ Inter is preferred with system UI fallbacks. No font is fetched at build/test ti
 
 Figma's white 15 px label on `#16A34A` and orange text `#F97316` on `#FFF7ED` do not reach 4.5:1.
 Primitive values remain unchanged for traceability. Components use `#15803D` for the primary
-interactive background and `#9A3412` for warning text. Automated contrast tests require 4.5:1.
+interactive background and `#9A3412` for warning text. Muted labels on warning surfaces use primary
+text because the Figma pairing reaches only 4.48:1. Automated contrast tests require 4.5:1.
 
 Motion and z-index are implementation foundation tokens because Figma does not publish variables for
 them. They are deliberately small, have no alternate theme, and respect `prefers-reduced-motion`.
