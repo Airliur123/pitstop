@@ -4,6 +4,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['test/integration/**/*.test.ts'],
-    passWithNoTests: true,
+    fileParallelism: false,
+    testTimeout: 120_000,
+    hookTimeout: 180_000,
+    restoreMocks: true,
   },
 });

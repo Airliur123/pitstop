@@ -6,6 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./identifiers": "./src/identifiers.ts",
+    "./migrate": "./src/migrate.ts",
+    "./public-api": "./src/public-api.ts",
     "./schema": "./src/schema.ts",
     "./spatial": "./src/spatial.ts",
     "./transactions": "./src/transactions.ts"

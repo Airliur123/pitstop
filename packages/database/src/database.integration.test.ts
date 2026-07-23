@@ -8,6 +8,12 @@ import { GenericContainer, type StartedTestContainer, Wait } from 'testcontainer
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createUlid, type Ulid } from './identifiers';
+import {
+  findPublicCategories,
+  findPublicPlaceBySlug,
+  findRecommendationFallback,
+  searchPublicPlaces,
+} from './public-api';
 import { geocodingResults } from './schema';
 import { seedDatabase } from './seed';
 import { findPlacesWithinRadius } from './spatial';
@@ -569,6 +575,202 @@ describe.sequential('MySQL 8.4 spatial database', () => {
     await expect(
       insertIdempotencyKey(getPool(), 'report-write', idempotencyKey),
     ).resolves.toBeUndefined();
+  });
+
+  it('29. reads public categories in stable sort order', async () => {
+    const categories = await findPublicCategories(getPool());
+    expect(categories.map(({ code }) => code)).toEqual([
+      'MAKAN_MURAH',
+      'NGOPI',
+      'TOILET',
+      'MUSALA',
+      'ISTIRAHAT',
+    ]);
+  });
+
+  it('30. searches only ACTIVE, ADMIN_VERIFIED, non-deleted category matches', async () => {
+    const result = await searchPublicPlaces(getPool(), {
+      longitude: 106.8061,
+      latitude: -6.1468,
+      radiusMeters: 100,
+      category: 'MAKAN_MURAH',
+      budgetAmount: null,
+      budgetApplied: false,
+      sort: 'NEAREST',
+      limit: 50,
+    });
+    expect(result.places.map(({ name }) => name)).toEqual(['Warung Bu Ani']);
+  });
+
+  it('31. applies Makan Murah budget in SQL using valid main items', async () => {
+    const matching = await searchPublicPlaces(getPool(), {
+      longitude: 106.8061,
+      latitude: -6.1468,
+      radiusMeters: 100,
+      category: 'MAKAN_MURAH',
+      budgetAmount: 12_000,
+      budgetApplied: true,
+      sort: 'NEAREST',
+      limit: 50,
+    });
+    const overBudget = await searchPublicPlaces(getPool(), {
+      longitude: 106.8061,
+      latitude: -6.1468,
+      radiusMeters: 100,
+      category: 'MAKAN_MURAH',
+      budgetAmount: 11_999,
+      budgetApplied: true,
+      sort: 'NEAREST',
+      limit: 50,
+    });
+    expect(matching.places[0]?.cheapestQualifyingItem).toEqual({
+      name: 'Nasi telur',
+      priceAmount: 12_000,
+    });
+    expect(overBudget.places).toEqual([]);
+  });
+
+  it('32. applies Ngopi budget independently from Makan Murah', async () => {
+    const result = await searchPublicPlaces(getPool(), {
+      longitude: 106.8061,
+      latitude: -6.1468,
+      radiusMeters: 5_000,
+      category: 'NGOPI',
+      budgetAmount: 5_000,
+      budgetApplied: true,
+      sort: 'CHEAPEST',
+      limit: 50,
+    });
+    expect(result.places.map(({ name }) => name)).toEqual(['Warkop Bang Udin']);
+    expect(result.places[0]?.cheapestQualifyingItem?.priceAmount).toBe(5_000);
+  });
+
+  it('33. ignores non-main, unavailable, and soft-deleted menu prices', async () => {
+    const placeId = await seededPlaceId(getPool(), 'data-simulasi-warung-bu-ani');
+    const menuIds = [createUlid(), createUlid(), createUlid()] as const;
+    const [nonMainId, unavailableId, deletedId] = menuIds;
+    try {
+      await getPool().execute(
+        `INSERT INTO menus (
+           id, place_id, name, price_amount, is_main_item, is_available, deleted_at
+         ) VALUES
+           (?, ?, ?, 500, false, true, NULL),
+           (?, ?, ?, 600, true, false, NULL),
+           (?, ?, ?, 700, true, true, CURRENT_TIMESTAMP(3))`,
+        [
+          nonMainId,
+          placeId,
+          `Non-main ${nonMainId}`,
+          unavailableId,
+          placeId,
+          `Unavailable ${unavailableId}`,
+          deletedId,
+          placeId,
+          `Deleted ${deletedId}`,
+        ],
+      );
+      const result = await searchPublicPlaces(getPool(), {
+        longitude: 106.8061,
+        latitude: -6.1468,
+        radiusMeters: 5_000,
+        category: 'MAKAN_MURAH',
+        budgetAmount: 1_000,
+        budgetApplied: true,
+        sort: 'NEAREST',
+        limit: 50,
+      });
+      expect(result.places).toEqual([]);
+    } finally {
+      await getPool().query('DELETE FROM menus WHERE id IN (?, ?, ?)', [...menuIds]);
+    }
+  });
+
+  it('34. keyset cursor produces a stable next page without duplicates', async () => {
+    const first = await searchPublicPlaces(getPool(), {
+      longitude: 106.8061,
+      latitude: -6.1468,
+      radiusMeters: 5_000,
+      category: null,
+      budgetAmount: null,
+      budgetApplied: false,
+      sort: 'NEAREST',
+      limit: 1,
+    });
+    const firstPlace = first.places[0];
+    expect(firstPlace?.name).toBe('Warung Bu Ani');
+    expect(first.hasMore).toBe(true);
+    if (!firstPlace) throw new Error('Expected first public place');
+    const second = await searchPublicPlaces(getPool(), {
+      longitude: 106.8061,
+      latitude: -6.1468,
+      radiusMeters: 5_000,
+      category: null,
+      budgetAmount: null,
+      budgetApplied: false,
+      sort: 'NEAREST',
+      limit: 1,
+      cursor: {
+        id: firstPlace.id,
+        distanceMeters: firstPlace.distanceMeters,
+        priceAmount: firstPlace.cheapestAvailableMainItem?.priceAmount ?? null,
+        dataFreshnessAt: firstPlace.dataFreshnessAt,
+      },
+    });
+    expect(second.places[0]?.id).not.toBe(firstPlace.id);
+    expect(second.places[0]?.distanceMeters).toBeGreaterThanOrEqual(firstPlace.distanceMeters);
+  });
+
+  it('35. returns bounded public detail without storage object keys', async () => {
+    const detail = await findPublicPlaceBySlug(getPool(), 'data-simulasi-warung-bu-ani');
+    expect(detail?.name).toBe('Warung Bu Ani');
+    expect(detail?.menus[0]?.priceAmount).toBe(12_000);
+    expect(JSON.stringify(detail)).not.toContain('object_key');
+    expect(JSON.stringify(detail)).not.toContain('verified_by');
+  });
+
+  it('36. hides unverified public detail as not found', async () => {
+    await expect(
+      findPublicPlaceBySlug(getPool(), 'data-simulasi-nasi-uduk-ibu-rini'),
+    ).resolves.toBeNull();
+  });
+
+  it('37. computes deterministic budget and outside-radius diagnostics', async () => {
+    const budget = await findRecommendationFallback(getPool(), {
+      longitude: 106.8061,
+      latitude: -6.1468,
+      radiusMeters: 100,
+      fallbackRadiusMeters: 10_000,
+      category: 'MAKAN_MURAH',
+      budgetAmount: 10_000,
+      budgetApplied: true,
+    });
+    expect(budget.minimumMainItemAmountWithinRadius).toBe(12_000);
+
+    const outside = await findRecommendationFallback(getPool(), {
+      longitude: 106.8061,
+      latitude: -6.1468,
+      radiusMeters: 100,
+      fallbackRadiusMeters: 10_000,
+      category: 'NGOPI',
+      budgetAmount: null,
+      budgetApplied: false,
+    });
+    expect(outside.nearestOutsidePlace?.name).toBe('Warkop Bang Udin');
+    expect(outside.nearestOutsidePlace?.distanceMeters).toBeGreaterThan(100);
+  });
+
+  it('38. keeps SQL-injection-like category input inert', async () => {
+    const result = await searchPublicPlaces(getPool(), {
+      longitude: 106.8061,
+      latitude: -6.1468,
+      radiusMeters: 5_000,
+      category: "MAKAN_MURAH' OR 1=1 --",
+      budgetAmount: null,
+      budgetApplied: false,
+      sort: 'NEAREST',
+      limit: 50,
+    });
+    expect(result.places).toEqual([]);
   });
 });
 

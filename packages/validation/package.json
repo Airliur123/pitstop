@@ -13,6 +13,7 @@
     "clean": "rimraf dist .turbo"
   },
   "dependencies": {
+    "@pitstop/contracts": "workspace:*",
     "zod": "4.4.3"
   },
   "devDependencies": {

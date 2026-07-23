@@ -1,17 +1,16 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ReadyHealthResponse } from '@pitstop/contracts';
-import {
-  createDatabaseConnectionConfig,
-  createDatabasePool,
-  pingDatabase,
-} from '@pitstop/database';
-import Redis from 'ioredis';
+import { pingDatabase, type Pool } from '@pitstop/database';
 
-import { API_ENVIRONMENT, type ApiEnvironmentProvider } from '../../configuration';
+import { DATABASE_POOL } from '../../common/database/database.module';
+import { RedisService } from '../../common/redis/redis.service';
 
 @Injectable()
 export class HealthService {
-  constructor(@Inject(API_ENVIRONMENT) private readonly environment: ApiEnvironmentProvider) {}
+  constructor(
+    @Inject(DATABASE_POOL) private readonly pool: Pool,
+    @Inject(RedisService) private readonly redis: RedisService,
+  ) {}
 
   async readiness(): Promise<ReadyHealthResponse> {
     const [database, redis] = await Promise.all([this.checkDatabase(), this.checkRedis()]);
@@ -24,30 +23,10 @@ export class HealthService {
   }
 
   private async checkDatabase(): Promise<'up' | 'down'> {
-    const pool = createDatabasePool(
-      createDatabaseConnectionConfig({ DATABASE_URL: this.environment.DATABASE_URL }),
-    );
-    try {
-      return (await pingDatabase(pool)) ? 'up' : 'down';
-    } finally {
-      await pool.end();
-    }
+    return (await pingDatabase(this.pool)) ? 'up' : 'down';
   }
 
   private async checkRedis(): Promise<'up' | 'down'> {
-    const client = new Redis(this.environment.REDIS_URL, {
-      connectTimeout: 1_000,
-      enableOfflineQueue: false,
-      lazyConnect: true,
-      maxRetriesPerRequest: 0,
-    });
-    try {
-      await client.connect();
-      return (await client.ping()) === 'PONG' ? 'up' : 'down';
-    } catch {
-      return 'down';
-    } finally {
-      client.disconnect();
-    }
+    return (await this.redis.ping()) ? 'up' : 'down';
   }
 }

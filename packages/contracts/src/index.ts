@@ -1,9 +1,15 @@
 export type RequestId = string & { readonly __brand: 'RequestId' };
 
-export interface ApiSuccess<T> {
+export interface ResponseMeta {
+  readonly requestId: RequestId;
+  readonly generatedAt: string;
+}
+
+export interface ApiSuccess<T, TMeta extends ResponseMeta = ResponseMeta> {
   readonly success: true;
   readonly data: T;
   readonly requestId: RequestId;
+  readonly meta: TMeta;
 }
 
 export interface ApiErrorDetail {
@@ -16,6 +22,18 @@ export interface ApiError {
   readonly success: false;
   readonly error: ApiErrorDetail;
   readonly requestId: RequestId;
+  readonly type: string;
+  readonly title: string;
+  readonly status: number;
+  readonly code: string;
+  readonly detail: string;
+  readonly instance: string;
+  readonly validationErrors?: readonly ValidationError[];
+}
+
+export interface ValidationError {
+  readonly field: string;
+  readonly message: string;
 }
 
 export interface LiveHealthResponse {
@@ -38,3 +56,5 @@ export interface PaginationMeta extends PaginationRequest {
   readonly totalItems: number;
   readonly totalPages: number;
 }
+
+export * from './public-api';
