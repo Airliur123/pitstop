@@ -5,8 +5,12 @@ import { createPool, type Pool, type PoolOptions } from 'mysql2/promise';
 import { databaseSchema } from './schema';
 
 export * from './identifiers';
+export * from './migrate';
+export * from './public-api';
+export { seedDatabase } from './seed';
 export * from './spatial';
 export * from './transactions';
+export type { Pool } from 'mysql2/promise';
 
 export interface DatabaseConnectionConfig {
   readonly uri: string;

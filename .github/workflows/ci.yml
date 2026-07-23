@@ -57,6 +57,9 @@ jobs:
       - name: Database integration test
         run: pnpm db:test
 
+      - name: API integration and E2E test
+        run: pnpm test:api:integration
+
       - name: Build
         run: pnpm build
 

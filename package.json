@@ -17,6 +17,7 @@
     "test": "turbo test",
     "test:unit": "turbo test",
     "test:integration": "pnpm --filter @pitstop/api test:integration",
+    "test:api:integration": "pnpm --filter @pitstop/api test:integration",
     "test:e2e": "playwright test --config packages/testing/playwright.config.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
