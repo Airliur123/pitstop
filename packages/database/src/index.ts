@@ -2,7 +2,11 @@ import { parseDatabaseEnvironment } from '@pitstop/config';
 import { drizzle } from 'drizzle-orm/mysql2';
 import { createPool, type Pool, type PoolOptions } from 'mysql2/promise';
 
-import { phaseZeroSchema } from './schema';
+import { databaseSchema } from './schema';
+
+export * from './identifiers';
+export * from './spatial';
+export * from './transactions';
 
 export interface DatabaseConnectionConfig {
   readonly uri: string;
@@ -27,7 +31,7 @@ export function createDatabasePool(config: DatabaseConnectionConfig): Pool {
 }
 
 export function createDatabaseClient(pool: Pool) {
-  return drizzle({ client: pool, schema: phaseZeroSchema, mode: 'default' });
+  return drizzle({ client: pool, schema: databaseSchema, mode: 'default' });
 }
 
 export async function pingDatabase(pool: Pool): Promise<boolean> {
