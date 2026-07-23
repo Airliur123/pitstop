@@ -1,0 +1,33 @@
+packages:
+  - apps/*
+  - packages/*
+
+overrides:
+  postcss: 8.5.22
+
+allowBuilds:
+  '@nestjs/core': true
+  '@scarf/scarf': false
+  cpu-features: false
+  esbuild: true
+  msgpackr-extract: false
+  protobufjs: true
+  sharp: true
+  ssh2: false
+  unrs-resolver: true
+
+minimumReleaseAgeExclude:
+  - '@serwist/build@9.5.12'
+  - '@serwist/next@9.5.12'
+  - '@serwist/utils@9.5.12'
+  - '@serwist/webpack-plugin@9.5.12'
+  - '@serwist/window@9.5.12'
+  - '@turbo/darwin-64@2.10.6'
+  - '@turbo/darwin-arm64@2.10.6'
+  - '@turbo/linux-64@2.10.6'
+  - '@turbo/linux-arm64@2.10.6'
+  - '@turbo/windows-64@2.10.6'
+  - '@turbo/windows-arm64@2.10.6'
+  - serwist@9.5.12
+  - turbo@2.10.6
+  - postcss@8.5.22

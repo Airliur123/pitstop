@@ -1,0 +1,11 @@
+.next
+apps/*/next-env.d.ts
+coverage
+dist
+node_modules
+pnpm-lock.yaml
+playwright-report
+test-results
+tmp
+input
+docs/product/*.pdf

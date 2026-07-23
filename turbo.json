@@ -1,0 +1,35 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "globalEnv": ["NODE_ENV", "NEXT_PUBLIC_API_BASE_URL"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+    },
+    "@pitstop/api#build": { "outputs": [] },
+    "@pitstop/config#build": { "outputs": [] },
+    "@pitstop/contracts#build": { "outputs": [] },
+    "@pitstop/database#build": { "outputs": [] },
+    "@pitstop/testing#build": { "outputs": [] },
+    "@pitstop/ui#build": { "outputs": [] },
+    "@pitstop/validation#build": { "outputs": [] },
+    "@pitstop/worker#build": { "outputs": [] },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {
+      "dependsOn": ["^lint"]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
+    "clean": {
+      "cache": false
+    }
+  }
+}
