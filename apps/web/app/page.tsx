@@ -1,18 +1,47 @@
-import { FoundationBadge } from '@pitstop/ui';
+import {
+  Alert,
+  AppHeader,
+  Badge,
+  Button,
+  Card,
+  MobileBottomNavigation,
+  MobilePageShell,
+  SkipLink,
+} from '@pitstop/ui';
 
 export default function WebFoundationPage() {
   return (
-    <main className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center gap-5 px-6 py-12">
-      <FoundationBadge tone="success">Phase 0</FoundationBadge>
-      <h1 className="text-4xl font-bold tracking-tight">PitStop</h1>
-      <p className="text-xl text-slate-700">Web Foundation</p>
-      <p className="text-slate-600">Status: repository and engineering foundation.</p>
-      <a
-        className="w-fit text-green-700 underline underline-offset-4"
-        href={`${process.env.NEXT_PUBLIC_API_BASE_URL}/health/live`}
-      >
-        API health
-      </a>
-    </main>
+    <>
+      <SkipLink />
+      <MobilePageShell>
+        <AppHeader />
+        <main className="flex flex-1 flex-col gap-4 px-4 py-5" id="main-content">
+          <Badge className="w-fit" tone="success">
+            Phase 2
+          </Badge>
+          <div>
+            <h1 className="text-[length:var(--pitstop-type-heading-h1-size)] font-bold leading-[var(--pitstop-type-heading-h1-line)]">
+              Foundation siap digunakan
+            </h1>
+            <p className="mt-2 text-base leading-6 text-muted">
+              Shell mobile PitStop menggunakan token, komponen, dan pola aksesibilitas bersama.
+            </p>
+          </div>
+          <Alert title="UI Preview" tone="info">
+            Halaman ini sengaja belum memuat rekomendasi, lokasi, peta, atau data bisnis.
+          </Alert>
+          <Card>
+            <h2 className="text-lg font-semibold">Guest-first foundation</h2>
+            <p className="mt-2 text-sm text-muted">
+              Navigasi dapat digunakan dengan keyboard dan target sentuh mengikuti minimum 48 px.
+            </p>
+            <Button className="mt-4 w-full" disabled>
+              Fitur tersedia pada phase berikutnya
+            </Button>
+          </Card>
+        </main>
+        <MobileBottomNavigation />
+      </MobilePageShell>
+    </>
   );
 }

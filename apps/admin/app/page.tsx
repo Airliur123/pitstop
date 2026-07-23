@@ -1,12 +1,46 @@
-import { FoundationBadge } from '@pitstop/ui';
+import {
+  AdminPageShell,
+  AdminSidebar,
+  AdminStatCard,
+  AdminTopbar,
+  Alert,
+  Badge,
+  Card,
+  SkipLink,
+} from '@pitstop/ui';
 
 export default function AdminFoundationPage() {
   return (
-    <main className="mx-auto flex min-h-screen max-w-4xl flex-col justify-center gap-5 px-8 py-12">
-      <FoundationBadge>Phase 0</FoundationBadge>
-      <h1 className="text-4xl font-bold tracking-tight">PitStop Admin</h1>
-      <p className="text-xl text-slate-700">Admin Foundation</p>
-      <p className="text-slate-600">Status: repository and engineering foundation.</p>
-    </main>
+    <>
+      <SkipLink />
+      <AdminPageShell>
+        <AdminSidebar />
+        <main className="min-w-0 px-4 py-6 sm:px-8 sm:py-7" id="main-content">
+          <AdminTopbar
+            description="Foundation antarmuka administrasi · Data Simulasi"
+            title="Dashboard"
+            trailing={<Badge tone="success">UI Preview</Badge>}
+          />
+          <Alert className="mt-6" title="Belum terhubung ke data bisnis" tone="info">
+            Shell ini hanya memvalidasi layout, navigasi, token, dan komponen Phase 2.
+          </Alert>
+          <section
+            aria-label="Statistik simulasi"
+            className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+          >
+            <AdminStatCard label="Tempat Aktif" tone="success" value="—" />
+            <AdminStatCard label="Menunggu Review" tone="warning" value="—" />
+            <AdminStatCard label="Laporan Baru" tone="danger" value="—" />
+            <AdminStatCard label="Perlu Diperbarui" value="—" />
+          </section>
+          <Card className="mt-5">
+            <h2 className="text-lg font-semibold">Konten admin</h2>
+            <p className="mt-2 text-sm text-muted">
+              Workflow moderasi, autentikasi, CRUD, dan statistik API sengaja ditunda.
+            </p>
+          </Card>
+        </main>
+      </AdminPageShell>
+    </>
   );
 }

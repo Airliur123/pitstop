@@ -5,12 +5,12 @@ import type { ComponentPropsWithoutRef } from 'react';
 import { cn } from './utilities';
 
 const badge = cva(
-  'inline-flex min-h-8 items-center rounded-full border px-3 py-1 text-sm font-semibold',
+  'inline-flex min-h-9 items-center rounded-full border px-3 py-1 text-[13px] font-semibold',
   {
     variants: {
       tone: {
-        neutral: 'border-slate-300 bg-slate-50 text-slate-700',
-        success: 'border-green-300 bg-green-50 text-green-800',
+        neutral: 'border-border bg-surface text-foreground',
+        success: 'border-border bg-surface-success text-success',
       },
     },
     defaultVariants: { tone: 'neutral' },

@@ -4,8 +4,8 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
 export const metadata: Metadata = {
-  title: 'PitStop Admin - Admin Foundation',
-  description: 'Phase 0 engineering foundation for PitStop administration.',
+  title: 'PitStop Admin',
+  description: 'PitStop administration interface foundation.',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
