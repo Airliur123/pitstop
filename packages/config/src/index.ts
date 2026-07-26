@@ -37,12 +37,53 @@ export const mailEnvironmentSchema = z.object({
   MAIL_PORT: portSchema,
 });
 
-export const webEnvironmentSchema = z.object({
-  NODE_ENV: nodeEnvironmentSchema,
-  WEB_PORT: portSchema,
-  NEXT_PUBLIC_API_BASE_URL: urlSchema,
-  NEXT_PUBLIC_ENABLE_UI_CATALOG: booleanStringSchema.optional().default(false),
-});
+export const webEnvironmentSchema = z
+  .object({
+    NODE_ENV: nodeEnvironmentSchema,
+    WEB_PORT: portSchema,
+    NEXT_PUBLIC_API_BASE_URL: urlSchema,
+    NEXT_PUBLIC_ENABLE_UI_CATALOG: booleanStringSchema.optional().default(false),
+    NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_ENABLED: booleanStringSchema.optional().default(false),
+    NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_LATITUDE: z.coerce.number().min(-90).max(90).optional(),
+    NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_LONGITUDE: z.coerce.number().min(-180).max(180).optional(),
+    NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_LABEL: nonEmptyStringSchema.optional(),
+  })
+  .superRefine((environment, context) => {
+    if (
+      environment.NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_ENABLED &&
+      (environment.NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_LATITUDE === undefined ||
+        environment.NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_LONGITUDE === undefined ||
+        environment.NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_LABEL === undefined)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_ENABLED'],
+        message: 'Preview location coordinates and label are required when enabled',
+      });
+    }
+    if (
+      environment.NODE_ENV === 'production' &&
+      environment.NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_ENABLED
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_ENABLED'],
+        message: 'Guest preview location must be disabled in production',
+      });
+    }
+    if (
+      environment.NODE_ENV === 'production' &&
+      /^(?:localhost|127\.0\.0\.1|\[::1\])$/i.test(
+        new URL(environment.NEXT_PUBLIC_API_BASE_URL).hostname,
+      )
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['NEXT_PUBLIC_API_BASE_URL'],
+        message: 'Production API base URL cannot use localhost',
+      });
+    }
+  });
 
 export const adminEnvironmentSchema = z.object({
   NODE_ENV: nodeEnvironmentSchema,

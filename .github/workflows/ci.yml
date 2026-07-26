@@ -62,6 +62,8 @@ jobs:
 
       - name: Build
         run: pnpm build
+        env:
+          NEXT_PUBLIC_API_BASE_URL: https://api.pitstop.invalid/api/v1
 
   e2e:
     needs: validate
@@ -92,6 +94,14 @@ jobs:
 
       - name: Prepare test environment
         run: cp .env.example .env
+
+      - name: Start local dependencies
+        run: docker compose up -d --wait
+
+      - name: Migrate and seed browser-test database
+        run: |
+          pnpm db:migrate
+          pnpm db:seed
 
       - name: Install Chromium and Linux dependencies
         run: pnpm exec playwright install --with-deps chromium

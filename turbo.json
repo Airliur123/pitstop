@@ -1,6 +1,14 @@
 {
   "$schema": "https://turborepo.com/schema.json",
-  "globalEnv": ["NODE_ENV", "NEXT_PUBLIC_API_BASE_URL", "NEXT_PUBLIC_ENABLE_UI_CATALOG"],
+  "globalEnv": [
+    "NODE_ENV",
+    "NEXT_PUBLIC_API_BASE_URL",
+    "NEXT_PUBLIC_ENABLE_UI_CATALOG",
+    "NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_ENABLED",
+    "NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_LATITUDE",
+    "NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_LONGITUDE",
+    "NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_LABEL"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

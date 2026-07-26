@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseApiEnvironment } from './index';
+import { parseApiEnvironment, parseWebEnvironment } from './index';
 
 const validEnvironment: NodeJS.ProcessEnv = {
   NODE_ENV: 'test',
@@ -63,5 +63,45 @@ describe('API environment parser', () => {
         PUBLIC_CURSOR_SIGNING_SECRET: 'production-cursor-signing-secret-0123456789',
       }).PUBLIC_CURSOR_SIGNING_SECRET,
     ).toBe('production-cursor-signing-secret-0123456789');
+  });
+});
+
+describe('web environment parser', () => {
+  const webEnvironment: NodeJS.ProcessEnv = {
+    NEXT_PUBLIC_API_BASE_URL: 'http://localhost:3002/api/v1',
+    NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_ENABLED: 'false',
+    NODE_ENV: 'development',
+    WEB_PORT: '3000',
+  };
+
+  it('keeps the location preview disabled by default', () => {
+    expect(parseWebEnvironment(webEnvironment).NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_ENABLED).toBe(
+      false,
+    );
+  });
+
+  it('requires a complete preview fixture when enabled', () => {
+    expect(() =>
+      parseWebEnvironment({
+        ...webEnvironment,
+        NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_ENABLED: 'true',
+      }),
+    ).toThrow(/NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_ENABLED/);
+  });
+
+  it('rejects preview fixtures and localhost API URLs in production', () => {
+    expect(() =>
+      parseWebEnvironment({
+        ...webEnvironment,
+        NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_ENABLED: 'true',
+        NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_LABEL: 'Data Simulasi',
+        NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_LATITUDE: '-6.1',
+        NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_LONGITUDE: '106.8',
+        NODE_ENV: 'production',
+      }),
+    ).toThrow(/Guest preview location must be disabled in production/);
+    expect(() => parseWebEnvironment({ ...webEnvironment, NODE_ENV: 'production' })).toThrow(
+      /Production API base URL cannot use localhost/,
+    );
   });
 });
