@@ -46,7 +46,7 @@ function CatalogSection({
   title,
 }: Readonly<{ children: React.ReactNode; description?: string; title: string }>) {
   return (
-    <section className="grid gap-4 rounded-card border border-border bg-surface p-4 sm:p-6">
+    <section className="grid min-w-0 gap-4 rounded-card border border-border bg-surface p-4 sm:p-6">
       <div>
         <h2 className="text-[length:var(--pitstop-type-heading-h2-size)] font-semibold">{title}</h2>
         {description ? <p className="mt-1 text-sm text-muted">{description}</p> : null}
@@ -86,7 +86,7 @@ export function UiCatalog() {
   return (
     <div className="min-h-dvh bg-app pb-28">
       <AppHeader backHref="/" title="Component Catalog" />
-      <main className="mx-auto grid w-full max-w-6xl gap-5 px-4 py-6" id="main-content">
+      <main className="mx-auto grid w-full min-w-0 max-w-6xl gap-5 px-4 py-6" id="main-content">
         <header>
           <Badge tone="warning">Development only · UI Preview</Badge>
           <h1 className="mt-3 text-[length:var(--pitstop-type-heading-h1-size)] font-bold">

@@ -11,7 +11,7 @@ import {
 import { cn } from '../utilities';
 
 const buttonVariants = cva(
-  'inline-flex min-h-12 items-center justify-center gap-2 rounded-button px-4 text-[length:var(--pitstop-type-label-large-size)] font-semibold leading-[var(--pitstop-type-label-large-line)] transition-colors duration-[var(--pitstop-duration-fast)] ease-[var(--pitstop-easing-standard)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 disabled:pointer-events-none disabled:border-border disabled:bg-app disabled:text-disabled aria-disabled:pointer-events-none aria-disabled:border-border aria-disabled:bg-app aria-disabled:text-disabled',
+  'inline-flex min-h-12 items-center justify-center gap-2 rounded-button px-4 text-[length:var(--pitstop-type-label-large-size)] font-semibold leading-[var(--pitstop-type-label-large-line)] transition-colors duration-[var(--pitstop-duration-fast)] ease-[var(--pitstop-easing-standard)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 disabled:pointer-events-none disabled:border-border disabled:bg-app disabled:text-muted aria-disabled:pointer-events-none aria-disabled:border-border aria-disabled:bg-app aria-disabled:text-muted',
   {
     variants: {
       variant: {
