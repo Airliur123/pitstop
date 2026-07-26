@@ -3,13 +3,19 @@
 import { useCallback, useState, useSyncExternalStore } from 'react';
 
 import {
+  DEFAULT_GUEST_BUDGET,
   GUEST_PREFERENCES_STORAGE_KEY,
+  type GuestBudgetPreset,
+  isValidBudget,
   readGuestPreferences,
   type StorageLike,
   writeGuestPreferences,
 } from '../lib/preferences';
 
 const preferencesChangedEvent = 'pitstop:guest-preferences-changed';
+const missingPreferencesSnapshot = 'missing';
+const storedPreferencesSnapshotPrefix = 'stored:';
+const unavailablePreferencesSnapshot = 'unavailable';
 
 function subscribe(onStoreChange: () => void) {
   window.addEventListener('storage', onStoreChange);
@@ -22,9 +28,12 @@ function subscribe(onStoreChange: () => void) {
 
 function getClientSnapshot() {
   try {
-    return window.localStorage.getItem(GUEST_PREFERENCES_STORAGE_KEY) ?? '';
+    const value = window.localStorage.getItem(GUEST_PREFERENCES_STORAGE_KEY);
+    return value === null
+      ? missingPreferencesSnapshot
+      : `${storedPreferencesSnapshotPrefix}${value}`;
   } catch {
-    return '';
+    return unavailablePreferencesSnapshot;
   }
 }
 
@@ -42,23 +51,32 @@ function getServerSnapshot() {
 
 export function useGuestPreferences() {
   const rawPreferences = useSyncExternalStore(subscribe, getClientSnapshot, getServerSnapshot);
-  const [volatileBudgetAmount, setVolatileBudgetAmount] = useState<number | undefined>();
+  const [volatileBudgetAmount, setVolatileBudgetAmount] = useState<
+    GuestBudgetPreset | null | undefined
+  >();
   const storage = getStorage();
-  const stored =
-    rawPreferences === null || storage === null
-      ? { budgetAmount: null }
-      : readGuestPreferences(storage);
-  const budgetAmount = volatileBudgetAmount ?? stored.budgetAmount ?? 15_000;
+  const hasStoredPreferences = rawPreferences?.startsWith(storedPreferencesSnapshotPrefix) ?? false;
+  const storedBudgetAmount =
+    !hasStoredPreferences || storage === null ? null : readGuestPreferences(storage).budgetAmount;
+  const persistedBudgetAmount =
+    rawPreferences === null
+      ? null
+      : hasStoredPreferences
+        ? storedBudgetAmount
+        : DEFAULT_GUEST_BUDGET;
+  const budgetAmount =
+    volatileBudgetAmount === undefined ? persistedBudgetAmount : volatileBudgetAmount;
   const hydrated = rawPreferences !== null;
 
   const setBudgetAmount = useCallback((value: number | null) => {
+    if (value !== null && !isValidBudget(value)) return;
     const nextStorage = getStorage();
     if (nextStorage !== null && writeGuestPreferences(nextStorage, value)) {
       setVolatileBudgetAmount(undefined);
       window.dispatchEvent(new Event(preferencesChangedEvent));
       return;
     }
-    setVolatileBudgetAmount(value ?? undefined);
+    setVolatileBudgetAmount(value);
   }, []);
 
   return { budgetAmount, hydrated, setBudgetAmount };

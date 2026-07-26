@@ -1,9 +1,11 @@
 export const GUEST_PREFERENCES_STORAGE_KEY = 'pitstop.guest.preferences.v1';
 const VERSION = 1 as const;
-export const MAX_BUDGET = 10_000_000;
+export const GUEST_BUDGET_PRESETS = [10_000, 15_000, 20_000, 25_000] as const;
+export type GuestBudgetPreset = (typeof GUEST_BUDGET_PRESETS)[number];
+export const DEFAULT_GUEST_BUDGET: GuestBudgetPreset = 15_000;
 
 export interface GuestPreferences {
-  readonly budgetAmount: number | null;
+  readonly budgetAmount: GuestBudgetPreset | null;
   readonly version: typeof VERSION;
 }
 
@@ -13,14 +15,32 @@ export interface StorageLike {
   setItem(key: string, value: string): void;
 }
 
-export function isValidBudget(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= MAX_BUDGET;
+function emptyGuestPreferences(): GuestPreferences {
+  return { budgetAmount: null, version: VERSION };
+}
+
+function normalizeInvalidGuestPreferences(storage: StorageLike) {
+  const normalized = emptyGuestPreferences();
+  try {
+    storage.setItem(GUEST_PREFERENCES_STORAGE_KEY, JSON.stringify(normalized));
+  } catch {
+    try {
+      storage.removeItem(GUEST_PREFERENCES_STORAGE_KEY);
+    } catch {
+      // Storage can be unavailable in private browsing or hardened environments.
+    }
+  }
+  return normalized;
+}
+
+export function isValidBudget(value: unknown): value is GuestBudgetPreset {
+  return typeof value === 'number' && GUEST_BUDGET_PRESETS.some((preset) => preset === value);
 }
 
 export function readGuestPreferences(storage: StorageLike): GuestPreferences {
   try {
     const raw = storage.getItem(GUEST_PREFERENCES_STORAGE_KEY);
-    if (!raw) return { budgetAmount: null, version: VERSION };
+    if (raw === null) return emptyGuestPreferences();
     const parsed: unknown = JSON.parse(raw);
     if (
       typeof parsed !== 'object' ||
@@ -30,17 +50,11 @@ export function readGuestPreferences(storage: StorageLike): GuestPreferences {
       !('budgetAmount' in parsed) ||
       (parsed.budgetAmount !== null && !isValidBudget(parsed.budgetAmount))
     ) {
-      storage.removeItem(GUEST_PREFERENCES_STORAGE_KEY);
-      return { budgetAmount: null, version: VERSION };
+      return normalizeInvalidGuestPreferences(storage);
     }
     return { budgetAmount: parsed.budgetAmount, version: VERSION };
   } catch {
-    try {
-      storage.removeItem(GUEST_PREFERENCES_STORAGE_KEY);
-    } catch {
-      // Storage can be unavailable in private browsing or hardened environments.
-    }
-    return { budgetAmount: null, version: VERSION };
+    return normalizeInvalidGuestPreferences(storage);
   }
 }
 

@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ApiProblem, getCategories, normalizeApiBaseUrl } from './client';
+import {
+  ApiClientValidationError,
+  ApiProblem,
+  getCategories,
+  getPlaces,
+  getRecommendations,
+  normalizeApiBaseUrl,
+  type RecommendationInput,
+} from './client';
 
 const originalBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -57,6 +65,110 @@ describe('public API client', () => {
       }),
     );
   });
+
+  function searchInput(
+    category: RecommendationInput['category'],
+    budgetAmount: unknown,
+  ): RecommendationInput {
+    return {
+      budgetAmount,
+      category,
+      latitude: -6.1,
+      longitude: 106.8,
+    } as RecommendationInput;
+  }
+
+  it.each([
+    ['MAKAN_MURAH', 10_000],
+    ['NGOPI', 25_000],
+  ] as const)('sends the official budget for %s', async (category, budgetAmount) => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('offline'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(getRecommendations(searchInput(category, budgetAmount))).rejects.toThrow(
+      'offline',
+    );
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(requestUrl.searchParams.get('category')).toBe(category);
+    expect(requestUrl.searchParams.get('budgetAmount')).toBe(String(budgetAmount));
+  });
+
+  it.each([
+    ['TOILET', 20_000],
+    ['MUSALA', 12_000],
+    ['ISTIRAHAT', null],
+  ] as const)('omits any budget supplied for %s', async (category, budgetAmount) => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('offline'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(getRecommendations(searchInput(category, budgetAmount))).rejects.toThrow(
+      'offline',
+    );
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(requestUrl.searchParams.get('category')).toBe(category);
+    expect(requestUrl.searchParams.has('budgetAmount')).toBe(false);
+  });
+
+  it.each([
+    ['undefined', undefined],
+    ['null', null],
+    ['negative', -1],
+    ['zero', 0],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['-Infinity', Number.NEGATIVE_INFINITY],
+    ['NaN', Number.NaN],
+    ['numeric string', '15000'],
+    ['non-preset', 12_000],
+  ])('rejects a %s budget before fetch for a budget category', (_label, budgetAmount) => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(() => getRecommendations(searchInput('MAKAN_MURAH', budgetAmount))).toThrow(
+      ApiClientValidationError,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invalid Ngopi budget before fetch', () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(() => getRecommendations(searchInput('NGOPI', Number.NaN))).toThrow(
+      ApiClientValidationError,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['recommendations', getRecommendations, 'public/recommendations'],
+    ['places', getPlaces, 'public/places'],
+  ] as const)(
+    'enforces category and budget rules at the %s transport boundary',
+    async (_transportName, transport, expectedPath) => {
+      const fetchMock = vi.fn().mockRejectedValue(new TypeError('offline'));
+      vi.stubGlobal('fetch', fetchMock);
+
+      expect(() => transport(searchInput('MAKAN_MURAH', 12_000))).toThrow(ApiClientValidationError);
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      await expect(transport(searchInput('TOILET', 20_000))).rejects.toThrow('offline');
+      expect(fetchMock).toHaveBeenCalledOnce();
+      const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+      expect(requestUrl.pathname).toContain(expectedPath);
+      expect(requestUrl.searchParams.has('budgetAmount')).toBe(false);
+
+      fetchMock.mockClear();
+      await expect(transport(searchInput('NGOPI', 25_000))).rejects.toThrow('offline');
+      expect(fetchMock).toHaveBeenCalledOnce();
+      const budgetRequestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+      expect(budgetRequestUrl.pathname).toContain(expectedPath);
+      expect(budgetRequestUrl.searchParams.get('budgetAmount')).toBe('25000');
+    },
+  );
 
   it('maps RFC 9457 Problem Details and Retry-After into a typed error', async () => {
     vi.stubGlobal(

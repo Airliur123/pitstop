@@ -18,8 +18,10 @@ import { PlaceResultCard } from './place-result-card';
 export function PlacesResults({ state }: Readonly<{ state: PlacesUrlState }>) {
   const location = useMemo(() => getLocationContext(), []);
   const [showAll, setShowAll] = useState(false);
+  const requiresBudget = state.category === 'MAKAN_MURAH' || state.category === 'NGOPI';
+  const hasRequiredBudget = !requiresBudget || state.budgetAmount !== null;
   const input =
-    location.status === 'READY'
+    location.status === 'READY' && hasRequiredBudget
       ? {
           budgetAmount: state.budgetAmount,
           category: state.category,
@@ -101,6 +103,16 @@ export function PlacesResults({ state }: Readonly<{ state: PlacesUrlState }>) {
             </p>
             <LinkButton className="mt-4" href="/" variant="secondary">
               Kembali
+            </LinkButton>
+          </section>
+        ) : !hasRequiredBudget ? (
+          <section className="rounded-card border border-border bg-surface p-5 text-center">
+            <h2 className="font-bold">Pilih preset budget</h2>
+            <p className="mt-2 text-sm text-muted">
+              Makan Murah dan Ngopi memerlukan salah satu dari empat preset budget resmi.
+            </p>
+            <LinkButton className="mt-4" href="/" variant="secondary">
+              Ubah pencarian
             </LinkButton>
           </section>
         ) : recommendations.isPending ? (

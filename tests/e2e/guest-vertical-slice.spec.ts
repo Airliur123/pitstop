@@ -14,6 +14,12 @@ interface CategoryRow extends RowDataPacket {
 }
 
 let paginationPool: Pool | undefined;
+const budgetPresets = [
+  { amount: '10000', label: '≤ Rp10.000' },
+  { amount: '15000', label: '≤ Rp15.000' },
+  { amount: '20000', label: '≤ Rp20.000' },
+  { amount: '25000', label: '≤ Rp25.000' },
+] as const;
 
 test.beforeAll(async () => {
   loadWorkspaceEnvironment(process.cwd());
@@ -125,6 +131,37 @@ test('@guest-core guest budget survives reload and a network failure remains rec
   ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Coba lagi' })).toBeEnabled();
 });
+
+for (const preset of budgetPresets) {
+  test(`@guest-core guest applies ${preset.label} from Home through Recommendations`, async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: /Ubah budget/ }).click();
+
+    const presetButton = page.getByRole('button', { name: preset.label });
+    await presetButton.click();
+    await expect(presetButton).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: 'Tutup lembar' }).click();
+
+    await expect(page.getByRole('button', { name: `Ubah budget ${preset.label}` })).toBeVisible();
+    await expect(page.getByRole('heading', { name: `Makan Murah ${preset.label}` })).toBeVisible();
+
+    const recommendationRequest = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return (
+        url.pathname === '/api/v1/public/recommendations' &&
+        url.searchParams.get('budgetAmount') === preset.amount &&
+        url.searchParams.get('limit') === '4'
+      );
+    });
+    await page.getByRole('button', { name: 'Cari Sekarang' }).click();
+    await recommendationRequest;
+
+    await expect(page).toHaveURL(`/places?category=MAKAN_MURAH&budget=${preset.amount}`);
+    await expect(page.getByText(new RegExp(`${preset.label} · Radius 5 km`))).toBeVisible();
+  });
+}
 
 test('@guest-core a missing public slug renders the safe not-found state', async ({ page }) => {
   await page.goto('/places/tempat-yang-tidak-ada');
