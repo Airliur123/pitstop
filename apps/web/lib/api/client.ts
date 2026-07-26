@@ -64,10 +64,14 @@ function combinedSignal(signal: AbortSignal | undefined) {
 }
 
 function retryAfterSeconds(response: Response) {
-  const value = response.headers.get('retry-after');
+  const value = response.headers.get('retry-after')?.trim();
   if (!value) return null;
   const seconds = Number(value);
-  return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds;
+
+  const retryAt = Date.parse(value);
+  if (Number.isNaN(retryAt)) return null;
+  return Math.max(0, Math.ceil((retryAt - Date.now()) / 1_000));
 }
 
 async function request<T>(path: string, schema: z.ZodType<T>, signal?: AbortSignal): Promise<T> {

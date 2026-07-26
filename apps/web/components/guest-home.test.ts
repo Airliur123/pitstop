@@ -145,7 +145,9 @@ describe('GuestHome', () => {
       'aria-pressed',
       'true',
     );
+    fireEvent.click(screen.getByRole('button', { name: /Ubah budget/ }));
     expect(screen.getByRole('button', { name: '≤ Rp15.000' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Tutup lembar' }));
     expect(await screen.findByRole('heading', { name: 'Tempat Utama' })).toBeVisible();
     expect(screen.queryByRole('heading', { name: 'Alternatif' })).not.toBeInTheDocument();
 

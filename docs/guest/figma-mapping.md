@@ -27,8 +27,12 @@ State `15:209`, Error State `15:210`, Loading Skeleton `15:225`.
 - Figma menyediakan budget “Bebas”, sedangkan kontrak Phase 3 mewajibkan budget pada
   `MAKAN_MURAH`/`NGOPI`. Phase 4 tidak mengirim null untuk kategori tersebut; keputusan kontrak
   “Bebas” ditunda.
-- Budget sheet dipakai sebagai referensi visual, tetapi implementasi inline menjaga flow utama dan
-  menghindari overlay behavior yang tidak material bagi acceptance Phase 4.
+- Budget sheet dipakai untuk memilih budget pada kategori yang memerlukannya. Sheet menggunakan
+  focus trap, Escape, dan focus restoration dari primitive `Sheet` Design System.
+- Pilihan “Bebas” belum dapat diekspos untuk `MAKAN_MURAH` atau `NGOPI`: kontrak Public API Phase 3
+  mewajibkan `budgetAmount` untuk kedua kategori itu. UI menampilkan budget yang benar-benar
+  diterapkan; keputusan produk untuk menyelaraskan pilihan Figma/Specification dengan kontrak API
+  tetap terbuka dan tidak ditafsirkan sebagai Rp15.000.
 - Navigation map/external direction, activity, contribution, dan login sengaja tidak diaktifkan.
 
 Hierarchy, semantic token, radius, target 48 px, padding 16 px, gap 12 px, dan treatment state

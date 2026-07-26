@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useSyncExternalStore } from 'react';
+import { useCallback, useState, useSyncExternalStore } from 'react';
 
 import {
   GUEST_PREFERENCES_STORAGE_KEY,
   readGuestPreferences,
+  type StorageLike,
   writeGuestPreferences,
 } from '../lib/preferences';
 
@@ -27,21 +28,37 @@ function getClientSnapshot() {
   }
 }
 
+function getStorage(): StorageLike | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
 function getServerSnapshot() {
   return null;
 }
 
 export function useGuestPreferences() {
   const rawPreferences = useSyncExternalStore(subscribe, getClientSnapshot, getServerSnapshot);
+  const [volatileBudgetAmount, setVolatileBudgetAmount] = useState<number | undefined>();
+  const storage = getStorage();
   const stored =
-    rawPreferences === null ? { budgetAmount: null } : readGuestPreferences(window.localStorage);
-  const budgetAmount = stored.budgetAmount ?? 15_000;
+    rawPreferences === null || storage === null
+      ? { budgetAmount: null }
+      : readGuestPreferences(storage);
+  const budgetAmount = volatileBudgetAmount ?? stored.budgetAmount ?? 15_000;
   const hydrated = rawPreferences !== null;
 
   const setBudgetAmount = useCallback((value: number | null) => {
-    if (writeGuestPreferences(window.localStorage, value)) {
+    const nextStorage = getStorage();
+    if (nextStorage !== null && writeGuestPreferences(nextStorage, value)) {
+      setVolatileBudgetAmount(undefined);
       window.dispatchEvent(new Event(preferencesChangedEvent));
+      return;
     }
+    setVolatileBudgetAmount(value ?? undefined);
   }, []);
 
   return { budgetAmount, hydrated, setBudgetAmount };

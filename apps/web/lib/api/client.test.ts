@@ -11,6 +11,7 @@ describe('public API client', () => {
 
   afterEach(() => {
     process.env.NEXT_PUBLIC_API_BASE_URL = originalBaseUrl;
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -88,6 +89,39 @@ describe('public API client', () => {
     });
   });
 
+  it('honors an HTTP-date Retry-After value', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-26T00:00:00.000Z'));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        Response.json(
+          {
+            code: 'RATE_LIMITED',
+            detail: 'Terlalu banyak permintaan.',
+            error: { code: 'RATE_LIMITED', message: 'Terlalu banyak permintaan.' },
+            instance: '/api/v1/public/categories',
+            requestId: 'request-date',
+            status: 429,
+            success: false,
+            title: 'Too Many Requests',
+            type: 'https://pitstop.local/problems/rate-limited',
+          },
+          {
+            headers: { 'Retry-After': 'Sun, 26 Jul 2026 00:00:03 GMT' },
+            status: 429,
+          },
+        ),
+      ),
+    );
+
+    await expect(getCategories()).rejects.toMatchObject({
+      retryAfterSeconds: 3,
+      status: 429,
+    });
+    vi.useRealTimers();
+  });
+
   it('rejects a 2xx payload that drifts from the contract', async () => {
     vi.stubGlobal(
       'fetch',
@@ -96,6 +130,22 @@ describe('public API client', () => {
     await expect(getCategories()).rejects.toMatchObject({
       code: 'INVALID_RESPONSE',
       status: 502,
+    });
+  });
+
+  it('rejects malformed JSON even when the content type is valid', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response('{', {
+          headers: { 'content-type': 'application/json' },
+          status: 200,
+        }),
+      ),
+    );
+    await expect(getCategories()).rejects.toMatchObject({
+      code: 'INVALID_JSON',
+      status: 200,
     });
   });
 

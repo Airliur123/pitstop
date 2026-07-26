@@ -1,7 +1,7 @@
 'use client';
 
 import type { PublicCategory, PublicCategoryCode } from '@pitstop/contracts';
-import { Button, Card, Skeleton } from '@pitstop/ui';
+import { Button, Card, Sheet, Skeleton } from '@pitstop/ui';
 import { useQuery } from '@tanstack/react-query';
 import { Armchair, Coffee, Landmark, MapPin, Soup, Toilet } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -72,52 +72,63 @@ function BudgetSelector({
   const [custom, setCustom] = useState('');
   const customNumber = Number(custom);
   return (
-    <fieldset>
-      <legend className="mb-3 font-semibold">Pilih budget</legend>
-      <div className="grid grid-cols-2 gap-2">
-        {budgetOptions.map((amount) => (
-          <button
-            aria-pressed={budgetAmount === amount}
-            className={
-              budgetAmount === amount
-                ? 'min-h-12 rounded-button border border-interactive bg-interactive px-3 font-semibold text-inverse outline-none focus-visible:ring-2 focus-visible:ring-focus'
-                : 'min-h-12 rounded-button border border-border bg-surface px-3 font-semibold outline-none focus-visible:ring-2 focus-visible:ring-focus'
-            }
-            key={amount}
-            onClick={() => onChange(amount)}
-            type="button"
-          >
-            ≤ {formatRupiah(amount)}
-          </button>
-        ))}
-      </div>
-      <div className="mt-3 flex gap-2">
-        <label className="sr-only" htmlFor="custom-budget">
-          Budget rupiah lainnya
-        </label>
-        <input
-          className="min-h-12 min-w-0 flex-1 rounded-button border border-border bg-surface px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-focus"
-          id="custom-budget"
-          inputMode="numeric"
-          min={1}
-          onChange={(event) => setCustom(event.target.value.replace(/\D/g, ''))}
-          placeholder="Budget lainnya"
-          type="text"
-          value={custom}
-        />
-        <Button
-          disabled={!isValidBudget(customNumber) || customNumber === 0}
-          onClick={() => {
-            onChange(customNumber);
-            setCustom('');
-          }}
-          type="button"
-          variant="secondary"
-        >
-          Terapkan
+    <Sheet
+      description="Pilih batas harga menu utama untuk pencarian ini."
+      title="Pilih budget"
+      trigger={
+        <Button className="w-full justify-between" type="button" variant="secondary">
+          <span>Ubah budget</span>
+          <span>{budgetAmount === null ? 'Belum dipilih' : `≤ ${formatRupiah(budgetAmount)}`}</span>
         </Button>
-      </div>
-    </fieldset>
+      }
+    >
+      <fieldset>
+        <legend className="mb-3 text-sm font-semibold">Budget aktif untuk menu utama</legend>
+        <div className="grid grid-cols-2 gap-2">
+          {budgetOptions.map((amount) => (
+            <button
+              aria-pressed={budgetAmount === amount}
+              className={
+                budgetAmount === amount
+                  ? 'min-h-12 rounded-button border border-interactive bg-interactive px-3 font-semibold text-inverse outline-none focus-visible:ring-2 focus-visible:ring-focus'
+                  : 'min-h-12 rounded-button border border-border bg-surface px-3 font-semibold outline-none focus-visible:ring-2 focus-visible:ring-focus'
+              }
+              key={amount}
+              onClick={() => onChange(amount)}
+              type="button"
+            >
+              ≤ {formatRupiah(amount)}
+            </button>
+          ))}
+        </div>
+        <div className="mt-3 flex gap-2">
+          <label className="sr-only" htmlFor="custom-budget">
+            Budget rupiah lainnya
+          </label>
+          <input
+            className="min-h-12 min-w-0 flex-1 rounded-button border border-border bg-surface px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            id="custom-budget"
+            inputMode="numeric"
+            min={1}
+            onChange={(event) => setCustom(event.target.value.replace(/\D/g, ''))}
+            placeholder="Budget lainnya"
+            type="text"
+            value={custom}
+          />
+          <Button
+            disabled={!isValidBudget(customNumber) || customNumber === 0}
+            onClick={() => {
+              onChange(customNumber);
+              setCustom('');
+            }}
+            type="button"
+            variant="secondary"
+          >
+            Terapkan
+          </Button>
+        </div>
+      </fieldset>
+    </Sheet>
   );
 }
 

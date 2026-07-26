@@ -1,5 +1,71 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import { loadWorkspaceEnvironment } from '@pitstop/config/server';
+import { createPool, type Pool, type RowDataPacket } from 'mysql2/promise';
+
+const paginationFixturePrefix = 'e2e-pagination-';
+const paginationFixtureIds = Array.from(
+  { length: 21 },
+  (_, index) => `01J${String(index).padStart(23, '0')}`,
+);
+
+interface CategoryRow extends RowDataPacket {
+  readonly id: string;
+}
+
+let paginationPool: Pool | undefined;
+
+test.beforeAll(async () => {
+  loadWorkspaceEnvironment(process.cwd());
+  paginationPool = createPool(process.env.DATABASE_URL ?? '');
+  const [categories] = await paginationPool.execute<CategoryRow[]>(
+    'SELECT id FROM categories WHERE code = ?',
+    ['ISTIRAHAT'],
+  );
+  const categoryId = categories[0]?.id;
+  if (!categoryId) throw new Error('ISTIRAHAT category fixture is unavailable.');
+
+  for (const [index, id] of paginationFixtureIds.entries()) {
+    const suffix = String(index + 1).padStart(2, '0');
+    await paginationPool.execute(
+      `INSERT INTO places (
+         id, name, slug, description, address, district, city, province, postal_code,
+         location, place_status, verification_status, verified_at, data_freshness_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ST_SRID(POINT(?, ?), 4326), ?, ?, CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
+      [
+        id,
+        `Tempat Pagination ${suffix}`,
+        `${paginationFixturePrefix}${suffix}`,
+        'Fixture sementara untuk pagination E2E.',
+        'Alamat fixture E2E',
+        'Kalideres',
+        'Jakarta Barat',
+        'DKI Jakarta',
+        '00000',
+        106.703 + index * 0.00001,
+        -6.138,
+        'ACTIVE',
+        'ADMIN_VERIFIED',
+      ],
+    );
+    await paginationPool.execute(
+      'INSERT INTO place_categories (place_id, category_id, is_primary) VALUES (?, ?, true)',
+      [id, categoryId],
+    );
+  }
+});
+
+test.afterAll(async () => {
+  if (!paginationPool) return;
+  try {
+    for (const id of paginationFixtureIds) {
+      await paginationPool.execute('DELETE FROM place_categories WHERE place_id = ?', [id]);
+      await paginationPool.execute('DELETE FROM places WHERE id = ?', [id]);
+    }
+  } finally {
+    await paginationPool.end();
+  }
+});
 
 test('@guest-core guest completes the category-to-detail vertical slice against the real API', async ({
   page,
@@ -41,12 +107,16 @@ test('@guest-core guest budget survives reload and a network failure remains rec
   page,
 }) => {
   await page.goto('/');
+  await page.getByRole('button', { name: /Ubah budget/ }).click();
   await page.getByRole('button', { name: '≤ Rp20.000' }).click();
+  await page.getByRole('button', { name: 'Tutup lembar' }).click();
   await page.reload();
+  await page.getByRole('button', { name: /Ubah budget/ }).click();
   await expect(page.getByRole('button', { name: '≤ Rp20.000' })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
+  await page.getByRole('button', { name: 'Tutup lembar' }).click();
 
   await page.route('**/api/v1/public/categories', (route) => route.abort('internetdisconnected'));
   await page.reload();
@@ -60,4 +130,33 @@ test('@guest-core a missing public slug renders the safe not-found state', async
   await page.goto('/places/tempat-yang-tidak-ada');
   await expect(page.getByRole('heading', { name: 'Tempat tidak ditemukan' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Kembali ke rekomendasi' })).toBeEnabled();
+});
+
+test('@guest-core loads a second opaque cursor page without duplicate places', async ({ page }) => {
+  await page.goto('/places?category=ISTIRAHAT');
+  await expect(page.getByRole('button', { name: 'Lihat semua' })).toBeVisible();
+
+  const firstPage = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/v1/public/places' && !url.searchParams.has('cursor');
+  });
+  await page.getByRole('button', { name: 'Lihat semua' }).click();
+  await firstPage;
+  const allResults = page.getByLabel('Semua hasil terverifikasi');
+  await expect(allResults.getByRole('heading', { name: 'Tempat Pagination 01' })).toBeVisible();
+
+  const secondPage = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/v1/public/places' && Boolean(url.searchParams.get('cursor'));
+  });
+  await page.getByRole('button', { name: 'Muat lebih banyak' }).click();
+  await secondPage;
+  await expect(allResults.getByRole('heading', { name: 'Tempat Pagination 21' })).toBeVisible();
+
+  const names = await allResults
+    .getByRole('heading', { name: /Tempat Pagination/ })
+    .allTextContents();
+  expect(names).toHaveLength(21);
+  expect(new Set(names).size).toBe(21);
+  await expect(page.getByText('Semua hasil sudah ditampilkan.')).toBeVisible();
 });

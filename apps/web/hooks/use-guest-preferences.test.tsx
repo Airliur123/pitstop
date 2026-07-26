@@ -31,4 +31,23 @@ describe('useGuestPreferences', () => {
     await waitFor(() => expect(result.current.hydrated).toBe(true));
     expect(result.current.budgetAmount).toBe(25_000);
   });
+
+  it('remains usable when the localStorage getter is denied', async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'localStorage');
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      get: () => {
+        throw new DOMException('Denied', 'SecurityError');
+      },
+    });
+
+    try {
+      const { result } = renderHook(() => useGuestPreferences());
+      await waitFor(() => expect(result.current.hydrated).toBe(true));
+      act(() => result.current.setBudgetAmount(20_000));
+      expect(result.current.budgetAmount).toBe(20_000);
+    } finally {
+      if (descriptor) Object.defineProperty(window, 'localStorage', descriptor);
+    }
+  });
 });
