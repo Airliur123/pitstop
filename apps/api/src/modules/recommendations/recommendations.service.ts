@@ -41,67 +41,53 @@ export class RecommendationsService {
 
   async find(query: RecommendationsQuery): Promise<RecommendationsServiceResult> {
     const budgetApplied = query.category === 'MAKAN_MURAH' || query.category === 'NGOPI';
-    const key = {
-      latitude: query.latitude,
-      longitude: query.longitude,
-      radiusMeters: query.radiusMeters,
-      category: query.category,
-      budgetAmount: query.budgetAmount ?? null,
-      limit: query.limit,
-    };
-    const cached = await this.cache.remember(
-      'recommendations',
-      key,
-      this.environment.CACHE_RECOMMENDATION_TTL_SECONDS,
-      async (): Promise<CachedRecommendation> => {
-        const candidates = await searchPublicPlaces(this.pool, {
-          latitude: query.latitude,
-          longitude: query.longitude,
-          radiusMeters: query.radiusMeters,
-          category: query.category,
-          budgetAmount: query.budgetAmount ?? null,
-          budgetApplied,
-          sort: 'NEAREST',
-          limit: this.environment.PUBLIC_RECOMMENDATION_CANDIDATE_LIMIT,
-        });
-        const ranked = rankRecommendations({
-          candidates: candidates.places,
-          budgetAmount: query.budgetAmount ?? null,
-          budgetApplied,
-          radiusMeters: query.radiusMeters,
-          limit: query.limit,
-          now: new Date(),
-        });
-        if (ranked.length > 0) {
-          return {
-            data: { primary: ranked[0] ?? null, alternatives: ranked.slice(1, 4) },
-            fallback: null,
-          };
-        }
-        if (candidates.places.length > 0) {
-          return {
-            data: { primary: null, alternatives: [] },
-            fallback: { reason: 'ALL_PLACES_CLOSED' },
-          };
-        }
-        const diagnostic = await findRecommendationFallback(this.pool, {
-          latitude: query.latitude,
-          longitude: query.longitude,
-          radiusMeters: query.radiusMeters,
-          fallbackRadiusMeters: this.environment.PUBLIC_FALLBACK_RADIUS_METERS,
-          category: query.category,
-          budgetAmount: query.budgetAmount ?? null,
-          budgetApplied,
-        });
+    const lookup = await this.cache.bypass(async (): Promise<CachedRecommendation> => {
+      const candidates = await searchPublicPlaces(this.pool, {
+        latitude: query.latitude,
+        longitude: query.longitude,
+        radiusMeters: query.radiusMeters,
+        category: query.category,
+        budgetAmount: query.budgetAmount ?? null,
+        budgetApplied,
+        sort: 'NEAREST',
+        limit: this.environment.PUBLIC_RECOMMENDATION_CANDIDATE_LIMIT,
+      });
+      const ranked = rankRecommendations({
+        candidates: candidates.places,
+        budgetAmount: query.budgetAmount ?? null,
+        budgetApplied,
+        radiusMeters: query.radiusMeters,
+        limit: query.limit,
+        now: new Date(),
+      });
+      if (ranked.length > 0) {
+        return {
+          data: { primary: ranked[0] ?? null, alternatives: ranked.slice(1, 4) },
+          fallback: null,
+        };
+      }
+      if (candidates.places.length > 0) {
         return {
           data: { primary: null, alternatives: [] },
-          fallback: this.mapFallback(diagnostic, query.budgetAmount ?? null, budgetApplied),
+          fallback: { reason: 'ALL_PLACES_CLOSED' },
         };
-      },
-      isCachedRecommendation,
-    );
-    if (cached.value.fallback) {
-      this.logger.debug({ fallbackReason: cached.value.fallback.reason });
+      }
+      const diagnostic = await findRecommendationFallback(this.pool, {
+        latitude: query.latitude,
+        longitude: query.longitude,
+        radiusMeters: query.radiusMeters,
+        fallbackRadiusMeters: this.environment.PUBLIC_FALLBACK_RADIUS_METERS,
+        category: query.category,
+        budgetAmount: query.budgetAmount ?? null,
+        budgetApplied,
+      });
+      return {
+        data: { primary: null, alternatives: [] },
+        fallback: this.mapFallback(diagnostic, query.budgetAmount ?? null, budgetApplied),
+      };
+    });
+    if (lookup.value.fallback) {
+      this.logger.debug({ fallbackReason: lookup.value.fallback.reason });
     }
     const queryMeta: RecommendationQueryMeta = {
       latitude: query.latitude,
@@ -113,11 +99,11 @@ export class RecommendationsService {
       limit: query.limit,
     };
     return {
-      data: cached.value.data,
+      data: lookup.value.data,
       meta: {
         query: queryMeta,
-        fallback: cached.value.fallback,
-        cache: cached.status,
+        fallback: lookup.value.fallback,
+        cache: lookup.status,
       },
     };
   }
@@ -162,18 +148,4 @@ export class RecommendationsService {
       },
     };
   }
-}
-
-function isCachedRecommendation(value: unknown): value is CachedRecommendation {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-  const cached = value as Record<string, unknown>;
-  if (typeof cached.data !== 'object' || cached.data === null || Array.isArray(cached.data)) {
-    return false;
-  }
-  const data = cached.data as Record<string, unknown>;
-  return (
-    (typeof data.primary === 'object' || data.primary === null) &&
-    Array.isArray(data.alternatives) &&
-    (typeof cached.fallback === 'object' || cached.fallback === null)
-  );
 }

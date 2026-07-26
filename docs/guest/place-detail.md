@@ -1,11 +1,14 @@
-# Place detail
+# Place detail and directions
 
-Detail mengambil satu resource dari `/public/places/:slug` dan hanya menampilkan field publik:
-nama/kategori, menu tersedia, fasilitas, jam operasional, alamat, dan status verifikasi publik.
+Detail continues to render only the verified public place contract. The photo treatment remains a
+safe fallback because Phase 3 exposes no public media URL.
 
-Foto memakai treatment fallback karena API Phase 3 belum memberikan media URL publik. UI tidak
-membuat URL object storage palsu dan tidak menampilkan key internal. Slug malformed memakai Next.js
-not-found; 404 API memakai state publik yang tidak membocorkan alasan internal.
+**Arahkan Sekarang** is now an external Google Maps action. Both Place Detail and place cards use
+the same helper, which:
 
-CTA “Arahkan Sekarang” terlihat untuk kesetiaan hierarchy Figma tetapi nonaktif dan dijelaskan
-untuk screen reader sebagai handoff Phase 5. Tidak ada peta atau Google Maps.
+- validates the destination coordinates supplied by the verified place response;
+- constructs an HTTPS Google Maps directions URL with `URL`/`URLSearchParams`;
+- does not add current-user coordinates;
+- opens a new tab with `rel="noopener noreferrer"`.
+
+Google Maps is not an internal PitStop route and no navigation event logs precise user location.

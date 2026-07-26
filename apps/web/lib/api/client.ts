@@ -13,6 +13,7 @@ import type {
 } from '@pitstop/contracts';
 import type { z } from 'zod';
 
+import { NORMAL_RADIUS_METERS } from '../location';
 import { type GuestBudgetPreset, isValidBudget } from '../preferences';
 import {
   categoriesResponseSchema,
@@ -175,7 +176,6 @@ export interface RecommendationInput {
   readonly latitude: number;
   readonly limit?: number;
   readonly longitude: number;
-  readonly radiusMeters?: number;
 }
 
 export function getRecommendations(input: RecommendationInput, signal?: AbortSignal) {
@@ -187,7 +187,7 @@ export function getRecommendations(input: RecommendationInput, signal?: AbortSig
       latitude: input.latitude,
       limit: input.limit ?? 4,
       longitude: input.longitude,
-      radiusMeters: input.radiusMeters ?? 5_000,
+      radiusMeters: NORMAL_RADIUS_METERS,
     })}`,
     recommendationsResponseSchema,
     signal,
@@ -209,7 +209,7 @@ export function getPlaces(input: PlacesInput, signal?: AbortSignal) {
       latitude: input.latitude,
       limit: input.limit ?? 20,
       longitude: input.longitude,
-      radiusMeters: input.radiusMeters ?? 5_000,
+      radiusMeters: NORMAL_RADIUS_METERS,
       sort: input.sort ?? 'NEAREST',
     })}`,
     placesResponseSchema,

@@ -12,7 +12,7 @@ const titles: Record<RecommendationFallbackReason, string> = {
   BUDGET_TOO_LOW: 'Belum ada yang sesuai budget',
   NO_CATEGORY_MATCH: 'Kategori belum tersedia',
   NO_VERIFIED_MATCH: 'Belum ada data terverifikasi',
-  OUTSIDE_RADIUS: 'Hasil berada di luar radius',
+  OUTSIDE_RADIUS: 'Belum ada tempat sesuai dalam radius 5 km',
 };
 
 describe('recommendation states', () => {
@@ -21,9 +21,28 @@ describe('recommendation states', () => {
     (reason, title) => {
       render(createElement(FallbackState, { fallback: { reason } }));
       expect(screen.getByRole('heading', { name: title })).toBeVisible();
-      expect(screen.getByRole('button', { name: 'Ubah pencarian' })).toBeEnabled();
+      expect(screen.getByRole('link', { name: 'Ubah pencarian' })).toHaveAttribute('href', '/');
     },
   );
+
+  it('keeps an outside-radius candidate separate until an explicit action is supplied', () => {
+    render(
+      createElement(FallbackState, {
+        action: createElement('a', { href: '/places/kandidat' }, 'Lihat tempat'),
+        fallback: {
+          nearestDistanceMeters: 7_400,
+          reason: 'OUTSIDE_RADIUS',
+        },
+      }),
+    );
+
+    expect(screen.getByText(/7,4 km.*di luar radius normal 5 km/)).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Lihat tempat' })).toHaveAttribute(
+      'href',
+      '/places/kandidat',
+    );
+    expect(screen.queryByRole('heading', { name: /kandidat/i })).not.toBeInTheDocument();
+  });
 
   it('renders a recoverable network error', () => {
     const onRetry = vi.fn();

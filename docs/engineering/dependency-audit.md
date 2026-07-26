@@ -11,8 +11,9 @@ Testing Library and jsdom are development-only. `axe-core` matches the Playwrigh
 used by the workspace. These packages support component interaction and WCAG regression tests without
 adding a production design framework.
 
-`pnpm audit --audit-level critical` exits successfully with no critical findings. Two transitive
-findings remain:
+At the Phase 2 audit snapshot, `pnpm audit --audit-level critical` exited successfully with no
+critical findings and these two transitive findings remained. See the current snapshot below for
+the registry's later additions:
 
 - **High - sharp/libvips (GHSA-f88m-g3jw-g9cj):** Next.js 16.2.11 declares `sharp ^0.34.5`, while
   the patched line begins at 0.35.0. A forced override would be outside Next's supported range. Track
@@ -26,6 +27,58 @@ The PostCSS advisory GHSA-qx2v-qp2m-jg93 was remediated with the documented work
 
 Deprecated transitive notices remain for `@esbuild-kit/core-utils`, `@esbuild-kit/esm-loader`, and
 `glob@10.5.0`; all arrive through current direct dependencies and are not changed independently.
+
+## Phase 5 map additions
+
+The optional guest-results map needs a browser map renderer that can display the same verified place
+dataset as the primary list, a fixed 5 km radius, selectable pins, and place-detail summaries. The
+following exact versions are installed only in `@pitstop/web`:
+
+- `leaflet@1.9.4` (BSD-2-Clause) is the stable renderer named by the product specification.
+- `@types/leaflet@1.9.21` (MIT) is development-only and provides strict TypeScript coverage.
+
+Next.js App Router never server-renders the Leaflet module: a small client wrapper loads it with
+`next/dynamic` and `ssr: false`. The client component integrates Leaflet directly through imperative
+`useEffect`/ref lifecycles. Center/radius, tile, marker, popup, selection, and error concerns have
+separate cleanup paths; every registered handler and layer is removed before dependency replacement,
+and `map.remove()` runs during unmount, including React development Strict Mode remounts. This avoids
+DOM access during SSR and keeps Leaflet out of the initial list-results server path without another
+production mapping abstraction. Leaflet's CSS is global because its controls, panes, and popups rely
+on those selectors; PitStop-specific styles use existing design tokens.
+
+OpenStreetMap's public HTTPS tile endpoint is the default token-free base layer and retains visible
+attribution. A browser tile request necessarily exposes the visitor IP address, requested tile
+coordinates, and referrer to the tile provider. It does not include PitStop's precise location in a
+URL, log, telemetry event, or application persistence. Set
+`NEXT_PUBLIC_MAP_TILES_DISABLED=true` to omit the tile layer entirely in CI, deterministic E2E, or
+privacy-sensitive environments; pins, summaries, and the 5 km circle still render over a neutral
+background. Tests must not call the public tile endpoint.
+
+The accessible result list remains the primary experience and the map is an optional enhancement.
+Map load or tile failures cannot remove the list. Removing React Leaflet also removes its transitive
+`@react-leaflet/core` package and Hippocratic-2.1 license from the production dependency graph.
+
+## Current audit snapshot - 2026-07-27
+
+`pnpm audit --audit-level critical` passes with **zero critical** advisories. The registry currently
+reports seven pre-existing transitive advisories: two moderate and five high. None is introduced
+through Leaflet or `@types/leaflet`.
+
+- **Moderate:** esbuild in Drizzle Kit's development-only esbuild-kit loader
+  (`GHSA-67mh-4wv8-2f99`).
+- **Moderate:** `@fastify/static` non-canonical-path authorization bypass
+  (`GHSA-8pvw-jcv7-9cmj`).
+- **High:** optional Sharp/libvips below 0.35 through Next.js (`GHSA-f88m-g3jw-g9cj`).
+- **High:** `find-my-way` HTTP/2 denial of service through Nest Fastify
+  (`GHSA-c96f-x56v-gq3h`).
+- **High:** js-yaml exponential parsing through Nest Swagger (`GHSA-pm4m-ph32-ghv5`).
+- **High:** `@fastify/static` path traversal/route-guard bypass (`GHSA-83w8-p2f5-377r`).
+- **High:** brace-expansion unbounded expansion through several existing build/runtime dependency
+  paths (`GHSA-mh99-v99m-4gvg`).
+
+Remediating these safely requires compatible parent-package updates and full API/build regression
+testing; forcing unrelated transitive versions was intentionally not folded into Phase 5. They
+remain release warnings despite the requested critical-threshold gate passing.
 
 ## Phase 1 temporary risk acceptance
 

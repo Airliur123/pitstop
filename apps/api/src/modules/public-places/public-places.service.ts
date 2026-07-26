@@ -90,57 +90,40 @@ export class PublicPlacesService {
           dataFreshnessAt: decodedCursor.dataFreshnessAt,
         }
       : undefined;
-    const key = {
-      latitude: query.latitude,
-      longitude: query.longitude,
-      radiusMeters: query.radiusMeters,
-      category: query.category ?? null,
-      budgetAmount: query.budgetAmount ?? null,
-      budgetApplied,
-      limit: query.limit,
-      cursor: query.cursor ?? null,
-      sort: query.sort,
-    };
-    const cached = await this.cache.remember(
-      'places-search',
-      key,
-      this.environment.CACHE_SEARCH_TTL_SECONDS,
-      async () => {
-        const result = await searchPublicPlaces(this.pool, {
-          latitude: query.latitude,
-          longitude: query.longitude,
-          radiusMeters: query.radiusMeters,
-          category: query.category ?? null,
-          budgetAmount: query.budgetAmount ?? null,
-          budgetApplied,
-          limit: query.limit,
-          sort: query.sort,
-          ...(databaseCursor ? { cursor: databaseCursor } : {}),
-        });
-        const data = result.places.map((place) => mapPublicPlace(place, budgetApplied));
-        const last = result.places.at(-1);
-        const nextCursor =
-          result.hasMore && last
-            ? encodeCursor(
-                {
-                  version: 2,
-                  queryHash,
-                  sort: query.sort,
-                  id: last.id,
-                  distanceMeters: last.distanceMeters,
-                  priceAmount: last.cheapestAvailableMainItem?.priceAmount ?? null,
-                  dataFreshnessAt: last.dataFreshnessAt,
-                },
-                this.environment.PUBLIC_CURSOR_SIGNING_SECRET,
-              )
-            : null;
-        return {
-          data,
-          pagination: { nextCursor, hasMore: result.hasMore },
-        };
-      },
-      isSearchCacheValue,
-    );
+    const lookup = await this.cache.bypass(async () => {
+      const result = await searchPublicPlaces(this.pool, {
+        latitude: query.latitude,
+        longitude: query.longitude,
+        radiusMeters: query.radiusMeters,
+        category: query.category ?? null,
+        budgetAmount: query.budgetAmount ?? null,
+        budgetApplied,
+        limit: query.limit,
+        sort: query.sort,
+        ...(databaseCursor ? { cursor: databaseCursor } : {}),
+      });
+      const data = result.places.map((place) => mapPublicPlace(place, budgetApplied));
+      const last = result.places.at(-1);
+      const nextCursor =
+        result.hasMore && last
+          ? encodeCursor(
+              {
+                version: 2,
+                queryHash,
+                sort: query.sort,
+                id: last.id,
+                distanceMeters: last.distanceMeters,
+                priceAmount: last.cheapestAvailableMainItem?.priceAmount ?? null,
+                dataFreshnessAt: last.dataFreshnessAt,
+              },
+              this.environment.PUBLIC_CURSOR_SIGNING_SECRET,
+            )
+          : null;
+      return {
+        data,
+        pagination: { nextCursor, hasMore: result.hasMore },
+      };
+    });
 
     const queryMeta: PublicPlacesQueryMeta = {
       latitude: query.latitude,
@@ -153,11 +136,11 @@ export class PublicPlacesService {
       sort: query.sort,
     };
     return {
-      data: cached.value.data,
+      data: lookup.value.data,
       meta: {
-        pagination: cached.value.pagination,
+        pagination: lookup.value.pagination,
         query: queryMeta,
-        cache: cached.status,
+        cache: lookup.status,
       },
     };
   }
@@ -187,18 +170,6 @@ export class PublicPlacesService {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isSearchCacheValue(value: unknown): value is {
-  readonly data: readonly PublicPlaceListItem[];
-  readonly pagination: PublicPlacesMeta['pagination'];
-} {
-  if (!isRecord(value) || !Array.isArray(value.data) || !isRecord(value.pagination)) return false;
-  return (
-    (typeof value.pagination.nextCursor === 'string' || value.pagination.nextCursor === null) &&
-    typeof value.pagination.hasMore === 'boolean' &&
-    value.data.every(isPublicPlaceListItem)
-  );
 }
 
 function isPublicPlaceDetail(value: unknown): value is PublicPlaceDetail {

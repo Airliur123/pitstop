@@ -14,4 +14,6 @@ fetch.
 
 Base URL berasal dari `NEXT_PUBLIC_API_BASE_URL`, dinormalisasi tanpa trailing slash, dan tidak
 boleh menunjuk localhost pada production. Client tidak mengimpor database/NestJS, tidak mencatat
-koordinat, dan tidak melakukan ranking ulang.
+koordinat, dan tidak melakukan ranking ulang. Guest Phase 5 mengunci request normal pada radius
+5.000 meter. Accuracy browser dan label/alamat manual tidak dikirim. List dan map memakai cache
+response recommendation yang sama.

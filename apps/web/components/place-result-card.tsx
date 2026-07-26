@@ -1,6 +1,7 @@
 import type { PublicPlaceListItem, PublicRecommendation } from '@pitstop/contracts';
 import { Card, FacilityChip, LinkButton, StatusBadge } from '@pitstop/ui';
 
+import { buildGoogleMapsDirectionsUrl } from '../lib/directions';
 import { formatDistance, formatRupiah } from '../lib/format';
 
 function statusFor(place: PublicPlaceListItem | PublicRecommendation) {
@@ -24,6 +25,8 @@ export function PlaceResultCard({
   const price =
     ('cheapestQualifyingItem' in place ? place.cheapestQualifyingItem : null) ??
     place.cheapestAvailableMainItem;
+  const directionsHref = buildGoogleMapsDirectionsUrl(place);
+  const directionsLabel = `Arahkan ke ${place.name} di Google Maps (buka tab baru)`;
   if (compact) {
     return (
       <Card className="flex min-h-20 items-center gap-2.5 rounded-button px-3 py-2.5 shadow-none">
@@ -34,9 +37,20 @@ export function PlaceResultCard({
             {price ? ` · ${formatRupiah(price.priceAmount)}` : ''}
           </p>
         </div>
-        <LinkButton className="shrink-0" href={`/places/${place.slug}`} variant="ghost">
-          Detail
-        </LinkButton>
+        <div className="flex shrink-0 items-center gap-1">
+          <LinkButton
+            aria-label={directionsLabel}
+            href={directionsHref}
+            rel="noopener noreferrer"
+            target="_blank"
+            variant="ghost"
+          >
+            Arahkan
+          </LinkButton>
+          <LinkButton href={`/places/${place.slug}`} variant="ghost">
+            Detail
+          </LinkButton>
+        </div>
       </Card>
     );
   }
@@ -74,9 +88,20 @@ export function PlaceResultCard({
           />
         ))}
       </div>
-      <LinkButton className="w-full" href={`/places/${place.slug}`} variant="ghost">
-        Detail
-      </LinkButton>
+      <div className="grid grid-cols-2 gap-2">
+        <LinkButton
+          aria-label={directionsLabel}
+          className="w-full"
+          href={directionsHref}
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          Arahkan
+        </LinkButton>
+        <LinkButton className="w-full" href={`/places/${place.slug}`} variant="ghost">
+          Detail
+        </LinkButton>
+      </div>
     </Card>
   );
 }

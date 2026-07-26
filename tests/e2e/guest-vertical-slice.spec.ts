@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test } from '@playwright/test';
 import { loadWorkspaceEnvironment } from '@pitstop/config/server';
+import { expect, test } from '@playwright/test';
 import { createPool, type Pool, type RowDataPacket } from 'mysql2/promise';
 
 const paginationFixturePrefix = 'e2e-pagination-';
@@ -20,6 +20,14 @@ const budgetPresets = [
   { amount: '20000', label: '≤ Rp20.000' },
   { amount: '25000', label: '≤ Rp25.000' },
 ] as const;
+
+async function activateKalideres(page: import('@playwright/test').Page) {
+  await page.getByRole('button', { name: 'Pilih area manual' }).click();
+  await page.getByRole('button', { name: /Kalideres.*Jakarta Barat/ }).click();
+  await page.getByRole('button', { name: 'Gunakan area ini' }).click();
+  await expect(page.getByText('Area manual')).toBeVisible();
+  await expect(page.getByText('Kalideres, Jakarta Barat')).toBeVisible();
+}
 
 test.beforeAll(async () => {
   loadWorkspaceEnvironment(process.cwd());
@@ -77,7 +85,7 @@ test('@guest-core guest completes the category-to-detail vertical slice against 
   page,
 }) => {
   await page.goto('/');
-  await expect(page.getByText('Data Simulasi — koordinat preview development')).toBeVisible();
+  await activateKalideres(page);
   await page.getByRole('button', { name: 'Istirahat' }).click();
   await expect(page.getByRole('heading', { name: 'Istirahat' })).toBeVisible();
 
@@ -85,7 +93,7 @@ test('@guest-core guest completes the category-to-detail vertical slice against 
   await expect(page).toHaveURL(/\/places\?category=ISTIRAHAT/);
   await expect(page.getByRole('heading', { name: 'Rekomendasi terbaik' })).toBeVisible();
 
-  const nearestFallback = page.getByRole('link', { name: 'Lihat tempat terdekat' });
+  const nearestFallback = page.getByRole('link', { name: 'Lihat kandidat di luar radius' });
   const directDetail = page.getByRole('link', { name: 'Detail' }).first();
   await expect(nearestFallback.or(directDetail)).toBeVisible();
   if (await nearestFallback.isVisible()) await nearestFallback.click();
@@ -94,7 +102,9 @@ test('@guest-core guest completes the category-to-detail vertical slice against 
   await expect(page).toHaveURL(/\/places\/data-simulasi-/);
   await expect(page.getByRole('heading', { name: /Warung/ })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Menu dan harga' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Arahkan Sekarang' })).toBeDisabled();
+  const directions = page.getByRole('link', { name: /Arahkan ke .*Google Maps/ });
+  await expect(directions).toHaveAttribute('target', '_blank');
+  await expect(directions).toHaveAttribute('href', /google\.com\/maps\/dir\/\?api=1&destination=/);
 
   const results = await new AxeBuilder({ page }).include('main').analyze();
   expect(
@@ -113,10 +123,12 @@ test('@guest-core guest budget survives reload and a network failure remains rec
   page,
 }) => {
   await page.goto('/');
+  await activateKalideres(page);
   await page.getByRole('button', { name: /Ubah budget/ }).click();
   await page.getByRole('button', { name: '≤ Rp20.000' }).click();
   await page.getByRole('button', { name: 'Tutup lembar' }).click();
   await page.reload();
+  await activateKalideres(page);
   await page.getByRole('button', { name: /Ubah budget/ }).click();
   await expect(page.getByRole('button', { name: '≤ Rp20.000' })).toHaveAttribute(
     'aria-pressed',
@@ -126,6 +138,7 @@ test('@guest-core guest budget survives reload and a network failure remains rec
 
   await page.route('**/api/v1/public/categories', (route) => route.abort('internetdisconnected'));
   await page.reload();
+  await activateKalideres(page);
   await expect(
     page.getByRole('alert').filter({ hasText: 'Koneksi sedang bermasalah' }),
   ).toBeVisible();
@@ -137,6 +150,7 @@ for (const preset of budgetPresets) {
     page,
   }) => {
     await page.goto('/');
+    await activateKalideres(page);
     await page.getByRole('button', { name: /Ubah budget/ }).click();
 
     const presetButton = page.getByRole('button', { name: preset.label });
@@ -158,7 +172,9 @@ for (const preset of budgetPresets) {
     await page.getByRole('button', { name: 'Cari Sekarang' }).click();
     await recommendationRequest;
 
-    await expect(page).toHaveURL(`/places?category=MAKAN_MURAH&budget=${preset.amount}`);
+    await expect(page).toHaveURL(
+      `/places?category=MAKAN_MURAH&sort=NEAREST&budget=${preset.amount}`,
+    );
     await expect(page.getByText(new RegExp(`${preset.label} · Radius 5 km`))).toBeVisible();
   });
 }
@@ -170,7 +186,11 @@ test('@guest-core a missing public slug renders the safe not-found state', async
 });
 
 test('@guest-core loads a second opaque cursor page without duplicate places', async ({ page }) => {
-  await page.goto('/places?category=ISTIRAHAT');
+  await page.goto('/');
+  await activateKalideres(page);
+  await page.getByRole('button', { name: 'Istirahat' }).click();
+  await page.getByRole('button', { name: 'Cari Sekarang' }).click();
+  await expect(page).toHaveURL(/\/places\?category=ISTIRAHAT/);
   await expect(page.getByRole('button', { name: 'Lihat semua' })).toBeVisible();
 
   const firstPage = page.waitForResponse((response) => {

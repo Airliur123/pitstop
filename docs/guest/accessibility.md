@@ -1,17 +1,16 @@
 # Accessibility
 
-Foundation menargetkan WCAG 2.2 AA:
+Phase 5 continues to target WCAG 2.2 AA:
 
-- skip link dan landmark `main`;
-- hierarchy heading yang stabil;
-- native fieldset/legend untuk kategori dan budget;
-- `aria-pressed` pada pilihan;
-- target interaksi sekitar 48 px;
-- focus-visible dari Design System;
-- loading memakai `aria-busy` dan teks screen-reader;
-- error memakai live alert dan retry yang dapat dioperasikan keyboard;
-- status tidak bergantung pada warna;
-- nama panjang, alamat, dan nilai rupiah dapat wrap.
+- location progress and transitions use understandable live status;
+- denied, unavailable, timeout, invalid, and map-error states have headings and actions;
+- permission starts only from a visible native button;
+- manual results are keyboard navigable and selection is not communicated by colour alone;
+- focus moves to the manual search field or invalid-state heading after the view transition;
+- retry and change-location controls have explicit accessible names;
+- map pins are keyboard enabled, but the result list remains the authoritative alternative;
+- all controls retain the Design System 48 px target, focus ring, contrast tokens, and
+  reduced-motion behaviour.
 
-Playwright memeriksa serious/critical axe violations, keyboard focus, overflow, console error, dan
-hydration warning. Reduced-motion dan semantic tokens diwarisi dari `packages/ui`.
+Browser E2E runs axe against the new granted/manual/map flows and asserts that the map does not
+remove list access.

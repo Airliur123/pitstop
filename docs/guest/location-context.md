@@ -1,17 +1,28 @@
 # Location context
 
-Phase 4 menyediakan abstraction bertipe `UNAVAILABLE` atau `READY`. State `READY` saat ini hanya
-berasal dari source `DEVELOPMENT_PREVIEW`.
+`apps/web/lib/location.ts` defines a discriminated state machine instead of independent booleans.
+It covers permission not requested/granted/denied, requesting, unavailable, timeout, retrying,
+manual selection, manual invalid, and active current/manual locations.
 
-Fixture diaktifkan dengan:
+An active context contains:
 
-- `NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_ENABLED`;
-- `NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_LATITUDE`;
-- `NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_LONGITUDE`;
-- `NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_LABEL`.
+- source `CURRENT` or `MANUAL`;
+- latitude and longitude;
+- a human-readable label;
+- active status;
+- browser accuracy when supplied;
+- an internal timestamp and stable query key.
 
-Preview default-nya nonaktif dan konfigurasi menolak pengaktifannya pada production. UI selalu
-menandainya sebagai **Data Simulasi**, tidak menampilkan koordinat mentah, dan tidak menyimpannya ke
-storage atau URL. Browser permission dan `navigator.geolocation` sengaja belum digunakan.
+The provider requests `navigator.geolocation` only after a visible user action. Requests have a
+bounded timeout and monotonically increasing attempt ID. Callbacks from an older attempt are
+ignored, and recommendation/place queries are cancelled when location becomes inactive or
+changes.
 
-Phase 5 dapat mengganti adapter ini dengan location provider resmi tanpa mengubah kontrak query UI.
+Manual location uses a provider-neutral `ManualLocationResolver`. The Phase 5 adapter is a local,
+deterministic catalogue matching the approved Figma areas: Tambora, Grogol Petamburan, Kalideres,
+and Cengkareng. It performs no third-party browser request and contains no secret. Search supports
+typed `NOT_FOUND`, `TOO_BROAD`, `INVALID_FORMAT`, and `UNUSABLE_RESULT` errors. An invalid result is
+never activated or sent to recommendations.
+
+The old development fixture remains available only when its explicit environment flag is enabled
+outside production. It is not a production fallback.

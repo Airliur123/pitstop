@@ -1,45 +1,41 @@
 import type { PublicCategoryCode, PublicPlaceSort } from '@pitstop/contracts';
 
-function coordinate(value: number) {
-  return Number(value.toFixed(5));
-}
+import { type ActiveLocationQueryKey, NORMAL_RADIUS_METERS } from './location';
 
 export const queryKeys = {
   categories: () => ['public', 'categories'] as const,
   detail: (slug: string) => ['public', 'places', 'detail', slug] as const,
-  places: (input: {
-    budgetAmount: number | null;
-    category: PublicCategoryCode;
-    latitude: number;
-    longitude: number;
-    radiusMeters: number;
-    sort: PublicPlaceSort;
-  }) =>
+  places: (
+    locationKey: ActiveLocationQueryKey,
+    input: {
+      budgetAmount: number | null;
+      category: PublicCategoryCode;
+      sort: PublicPlaceSort;
+    },
+  ) =>
     [
       'public',
       'places',
       'search',
-      coordinate(input.latitude),
-      coordinate(input.longitude),
-      input.radiusMeters,
+      ...locationKey,
+      NORMAL_RADIUS_METERS,
       input.category,
       input.budgetAmount,
       input.sort,
     ] as const,
-  recommendations: (input: {
-    budgetAmount: number | null;
-    category: PublicCategoryCode;
-    latitude: number;
-    limit: number;
-    longitude: number;
-    radiusMeters: number;
-  }) =>
+  recommendations: (
+    locationKey: ActiveLocationQueryKey,
+    input: {
+      budgetAmount: number | null;
+      category: PublicCategoryCode;
+      limit: number;
+    },
+  ) =>
     [
       'public',
       'recommendations',
-      coordinate(input.latitude),
-      coordinate(input.longitude),
-      input.radiusMeters,
+      ...locationKey,
+      NORMAL_RADIUS_METERS,
       input.category,
       input.budgetAmount,
       input.limit,

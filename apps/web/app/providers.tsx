@@ -4,10 +4,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 
-import { ApiProblem } from '../lib/api/client';
+import { LocationProvider } from '../hooks/use-location';
+import { ApiClientValidationError, ApiProblem } from '../lib/api/client';
 
-function shouldRetry(failureCount: number, error: Error) {
+export function shouldRetry(failureCount: number, error: Error) {
   if (failureCount >= 2) return false;
+  if (error instanceof ApiClientValidationError) return false;
   if (error instanceof ApiProblem && error.status < 500 && error.status !== 429) return false;
   return true;
 }
@@ -35,5 +37,9 @@ export function Providers({ children }: Readonly<{ children: ReactNode }>) {
       }),
   );
 
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <LocationProvider>{children}</LocationProvider>
+    </QueryClientProvider>
+  );
 }

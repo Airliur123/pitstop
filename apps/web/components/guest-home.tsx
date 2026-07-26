@@ -1,21 +1,24 @@
 'use client';
 
 import type { PublicCategory, PublicCategoryCode } from '@pitstop/contracts';
-import { Button, Card, Sheet, Skeleton } from '@pitstop/ui';
+import { Button, LinkButton, Sheet, Skeleton } from '@pitstop/ui';
 import { useQuery } from '@tanstack/react-query';
-import { Armchair, Coffee, Landmark, MapPin, Soup, Toilet } from 'lucide-react';
+import { Armchair, Coffee, Landmark, Soup, Toilet } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 
 import { useGuestPreferences } from '../hooks/use-guest-preferences';
+import { useLocation } from '../hooks/use-location';
 import { getCategories, getRecommendations } from '../lib/api/client';
 import { formatRupiah } from '../lib/format';
-import { getLocationContext } from '../lib/location';
+import { NORMAL_RADIUS_METERS } from '../lib/location';
 import { GUEST_BUDGET_PRESETS, type GuestBudgetPreset } from '../lib/preferences';
 import { queryKeys } from '../lib/query-keys';
+import { placesUrl } from '../lib/url-state';
 import { ApiErrorState } from './api-error-state';
 import { FallbackState } from './fallback-state';
 import { GuestShell } from './guest-shell';
+import { ActiveLocationSummary, LocationExperience } from './location-experience';
 import { PlaceResultCard } from './place-result-card';
 
 const categoryIcons = {
@@ -108,7 +111,7 @@ function BudgetSelector({
 
 export function GuestHome() {
   const router = useRouter();
-  const location = useMemo(() => getLocationContext(), []);
+  const { activeLocation, openManualLocation } = useLocation();
   const { budgetAmount, hydrated, setBudgetAmount } = useGuestPreferences();
   const [selectedCode, setSelectedCode] = useState<PublicCategoryCode | null>(null);
 
@@ -126,18 +129,17 @@ export function GuestHome() {
   );
   const canSearch =
     hydrated &&
-    location.status === 'READY' &&
+    activeLocation !== null &&
     Boolean(selectedCategory) &&
     (!selectedCategory?.supportsBudget || budgetAmount !== null);
   const recommendationInput =
-    location.status === 'READY' && effectiveSelectedCode
+    activeLocation && effectiveSelectedCode
       ? {
           budgetAmount: selectedCategory?.supportsBudget ? budgetAmount : null,
           category: effectiveSelectedCode,
-          latitude: location.latitude,
+          latitude: activeLocation.latitude,
           limit: 1,
-          longitude: location.longitude,
-          radiusMeters: 5_000,
+          longitude: activeLocation.longitude,
         }
       : null;
   const preview = useQuery({
@@ -146,43 +148,44 @@ export function GuestHome() {
       if (recommendationInput === null) throw new Error('Recommendation input is unavailable.');
       return getRecommendations(recommendationInput, signal);
     },
-    queryKey: recommendationInput
-      ? queryKeys.recommendations(recommendationInput)
-      : ['public', 'recommendations', 'disabled'],
+    queryKey:
+      recommendationInput && activeLocation
+        ? queryKeys.recommendations(activeLocation.queryKey, recommendationInput)
+        : ['public', 'recommendations', 'home-disabled'],
   });
 
   const openResults = () => {
     if (!effectiveSelectedCode || !canSearch) return;
-    const query = new URLSearchParams({ category: effectiveSelectedCode });
-    if (selectedCategory?.supportsBudget && budgetAmount !== null) {
-      query.set('budget', String(budgetAmount));
-    }
-    router.push(`/places?${query.toString()}`);
+    router.push(
+      placesUrl({
+        budgetAmount:
+          selectedCategory?.supportsBudget && budgetAmount !== null ? budgetAmount : null,
+        category: effectiveSelectedCode,
+        sort: 'NEAREST',
+        view: 'LIST',
+      }),
+    );
   };
+
+  if (!activeLocation) {
+    return (
+      <GuestShell bottomNavigation>
+        <main className="flex flex-1 flex-col gap-4 px-4 py-3" id="main-content">
+          <h1 className="sr-only">Aktifkan lokasi untuk mencari tempat singgah</h1>
+          <LocationExperience />
+        </main>
+      </GuestShell>
+    );
+  }
 
   return (
     <GuestShell bottomNavigation>
       <main className="flex flex-1 flex-col gap-4 px-4 py-3" id="main-content">
         <h1 className="sr-only">Cari tempat singgah dengan PitStop</h1>
-        <Card className="flex items-center gap-2.5 rounded-button p-3 shadow-none">
-          <MapPin aria-hidden="true" className="size-6 shrink-0 text-muted" />
-          <div className="min-w-0 flex-1">
-            <p className="text-[13px] text-muted">Konteks lokasi</p>
-            <p className="break-words text-sm font-semibold">
-              {location.status === 'READY' ? location.label : 'Lokasi belum tersedia'}
-            </p>
-          </div>
-        </Card>
-        {location.status === 'READY' ? (
-          <p className="rounded-button bg-surface-warning px-3 py-2 text-[13px] text-foreground">
-            Data Simulasi — koordinat preview development, bukan lokasi GPS kamu.
-          </p>
-        ) : (
-          <p className="rounded-button bg-surface-warning px-3 py-2 text-[13px] text-foreground">
-            Preview lokasi tidak aktif. Browser geolocation dan lokasi manual baru tersedia pada
-            Phase 5.
-          </p>
-        )}
+        <ActiveLocationSummary />
+        <p className="rounded-button bg-surface-warning px-3 py-2 text-[13px] text-foreground">
+          Pencarian normal selalu dibatasi radius {NORMAL_RADIUS_METERS / 1_000} km.
+        </p>
 
         {categories.isPending ? (
           <div aria-busy="true" aria-live="polite">
@@ -204,8 +207,8 @@ export function GuestHome() {
         ) : null}
 
         <section
-          className="flex flex-col gap-3 rounded-card bg-interactive p-4 text-inverse"
           aria-labelledby="search-summary"
+          className="flex flex-col gap-3 rounded-card bg-interactive p-4 text-inverse"
         >
           <h2 className="text-xl font-bold" id="search-summary">
             {selectedCategory?.name ?? 'Pilih kebutuhan'}
@@ -225,7 +228,7 @@ export function GuestHome() {
           </h2>
           {!canSearch ? (
             <p className="text-sm text-muted">
-              Lengkapi kategori, budget yang diperlukan, dan konteks lokasi untuk melihat preview.
+              Lengkapi kategori dan budget yang diperlukan untuk melihat preview.
             </p>
           ) : preview.isPending ? (
             <div aria-busy="true" aria-live="polite">
@@ -235,7 +238,25 @@ export function GuestHome() {
           ) : preview.isError ? (
             <ApiErrorState error={preview.error} onRetry={() => void preview.refetch()} />
           ) : preview.data.meta.fallback ? (
-            <FallbackState fallback={preview.data.meta.fallback} />
+            <FallbackState
+              action={
+                <div className="grid w-full gap-2">
+                  {preview.data.meta.fallback.nearestPlace ? (
+                    <LinkButton
+                      href={`/places/${preview.data.meta.fallback.nearestPlace.slug}`}
+                      size="full"
+                      variant="secondary"
+                    >
+                      Lihat kandidat di luar radius
+                    </LinkButton>
+                  ) : null}
+                  <Button onClick={openManualLocation} size="full" type="button" variant="ghost">
+                    Ubah lokasi
+                  </Button>
+                </div>
+              }
+              fallback={preview.data.meta.fallback}
+            />
           ) : preview.data.data.primary ? (
             <PlaceResultCard place={preview.data.data.primary} />
           ) : (

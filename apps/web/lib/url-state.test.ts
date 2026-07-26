@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { queryKeys } from './query-keys';
-import { parsePlacesUrlState } from './url-state';
+import { parsePlacesUrlState, placesUrl } from './url-state';
 
 describe('places URL state', () => {
   it('canonicalizes valid query values', () => {
@@ -9,6 +9,7 @@ describe('places URL state', () => {
       budgetAmount: 20_000,
       category: 'NGOPI',
       sort: 'CHEAPEST',
+      view: 'LIST',
     });
   });
 
@@ -23,6 +24,7 @@ describe('places URL state', () => {
       budgetAmount: null,
       category: 'MAKAN_MURAH',
       sort: 'NEAREST',
+      view: 'LIST',
     });
   });
 
@@ -36,26 +38,57 @@ describe('places URL state', () => {
   it('does not invent a budget for categories that do not support it', () => {
     expect(parsePlacesUrlState({ budget: '20000', category: 'toilet' }).budgetAmount).toBeNull();
   });
+
+  it('keeps list/map state public without accepting arbitrary values', () => {
+    expect(parsePlacesUrlState({ view: 'map' }).view).toBe('MAP');
+    expect(parsePlacesUrlState({ view: 'unexpected' }).view).toBe('LIST');
+  });
+
+  it('builds a shareable map URL without location coordinates', () => {
+    const url = placesUrl({
+      budgetAmount: 15_000,
+      category: 'MAKAN_MURAH',
+      sort: 'NEAREST',
+      view: 'MAP',
+    });
+
+    expect(url).toContain('category=MAKAN_MURAH');
+    expect(url).toContain('budget=15000');
+    expect(url).toContain('view=map');
+    expect(url).not.toMatch(/latitude|longitude|-6\.1|106\.8/);
+  });
 });
 
 describe('query keys', () => {
-  it('normalizes coordinates while preserving query dimensions', () => {
-    const first = queryKeys.recommendations({
+  it('uses the stable location identity without a raw address', () => {
+    const locationKey = ['location', 'CURRENT', -6.1468, 106.8061] as const;
+    const input = {
       budgetAmount: 15_000,
       category: 'MAKAN_MURAH',
-      latitude: -6.146_801,
       limit: 1,
-      longitude: 106.806_101,
-      radiusMeters: 5_000,
-    });
-    const second = queryKeys.recommendations({
-      budgetAmount: 15_000,
-      category: 'MAKAN_MURAH',
-      latitude: -6.146_799,
-      limit: 1,
-      longitude: 106.806_099,
-      radiusMeters: 5_000,
-    });
+    } as const;
+    const first = queryKeys.recommendations(locationKey, input);
+    const second = queryKeys.recommendations(locationKey, input);
+
     expect(first).toEqual(second);
+    expect(first).toContain(5_000);
+    expect(JSON.stringify(first)).not.toContain('Jl.');
+  });
+
+  it('keeps current and manual location caches separate', () => {
+    const input = {
+      budgetAmount: null,
+      category: 'TOILET',
+      limit: 4,
+    } as const;
+
+    expect(
+      queryKeys.recommendations(['location', 'CURRENT', -6.1468, 106.8061], input),
+    ).not.toEqual(
+      queryKeys.recommendations(
+        ['location', 'MANUAL', 'tambora-jakarta-barat', -6.1468, 106.8061],
+        input,
+      ),
+    );
   });
 });

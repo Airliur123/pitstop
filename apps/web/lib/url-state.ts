@@ -11,6 +11,7 @@ export interface PlacesUrlState {
   readonly budgetAmount: GuestBudgetPreset | null;
   readonly category: PublicCategoryCode;
   readonly sort: PublicPlaceSort;
+  readonly view: 'LIST' | 'MAP';
 }
 
 function first(value: string | readonly string[] | undefined) {
@@ -22,6 +23,7 @@ export function parsePlacesUrlState(
 ): PlacesUrlState {
   const rawCategory = first(input.category)?.toUpperCase();
   const rawSort = first(input.sort)?.toUpperCase();
+  const rawView = first(input.view)?.toUpperCase();
   const rawBudget = first(input.budget);
   const category = publicCategoryCodes.includes(rawCategory as PublicCategoryCode)
     ? (rawCategory as PublicCategoryCode)
@@ -41,5 +43,16 @@ export function parsePlacesUrlState(
       : null,
     category,
     sort,
+    view: rawView === 'MAP' ? 'MAP' : 'LIST',
   };
+}
+
+export function placesUrl(state: PlacesUrlState) {
+  const query = new URLSearchParams({
+    category: state.category,
+    sort: state.sort,
+  });
+  if (state.budgetAmount !== null) query.set('budget', String(state.budgetAmount));
+  if (state.view === 'MAP') query.set('view', 'map');
+  return `/places?${query.toString()}`;
 }
