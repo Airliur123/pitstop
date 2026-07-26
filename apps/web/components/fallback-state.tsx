@@ -1,5 +1,5 @@
 import type { RecommendationFallback, RecommendationFallbackReason } from '@pitstop/contracts';
-import { Button, Card } from '@pitstop/ui';
+import { Card, LinkButton } from '@pitstop/ui';
 import { CircleAlert, Clock3, Map, SearchX } from 'lucide-react';
 import type { ReactNode } from 'react';
 
@@ -31,10 +31,10 @@ const content: Record<
   },
   OUTSIDE_RADIUS: {
     body: (fallback) =>
-      fallback.nearestDistanceMeters
-        ? `Pilihan terdekat berada ${formatDistance(fallback.nearestDistanceMeters)} dari lokasi simulasi.`
-        : 'Pilihan terdekat berada di luar radius utama 5 km.',
-    title: 'Hasil berada di luar radius',
+      fallback.nearestDistanceMeters !== undefined
+        ? `Kandidat terdekat berjarak ${formatDistance(fallback.nearestDistanceMeters)}, di luar radius normal 5 km.`
+        : 'Kandidat terdekat berada di luar radius normal 5 km.',
+    title: 'Belum ada tempat sesuai dalam radius 5 km',
   },
 };
 
@@ -65,9 +65,9 @@ export function FallbackState({
       <h2 className="text-lg font-bold">{copy.title}</h2>
       <p className="max-w-72 text-[13px] text-muted">{copy.body(fallback)}</p>
       {action ?? (
-        <Button type="button" variant="ghost">
+        <LinkButton href="/" variant="ghost">
           Ubah pencarian
-        </Button>
+        </LinkButton>
       )}
     </Card>
   );

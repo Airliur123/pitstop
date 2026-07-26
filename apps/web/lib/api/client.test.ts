@@ -170,6 +170,19 @@ describe('public API client', () => {
     },
   );
 
+  it.each([
+    ['recommendations', getRecommendations],
+    ['places', getPlaces],
+  ] as const)('always sends the locked 5 km radius for %s', async (_name, transport) => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('offline'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(transport(searchInput('TOILET', null))).rejects.toThrow('offline');
+
+    const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(requestUrl.searchParams.get('radiusMeters')).toBe('5000');
+  });
+
   it('maps RFC 9457 Problem Details and Retry-After into a typed error', async () => {
     vi.stubGlobal(
       'fetch',

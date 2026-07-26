@@ -1,20 +1,17 @@
-# Guest mobile vertical slice
+# Guest location, map, radius, and directions
 
-Phase 4 menghubungkan Design System Phase 2 dan Public API Phase 3 untuk alur tamu:
+Phase 5 extends the guest vertical slice into:
 
-`Home → kategori → budget bila didukung → satu preview → Recommendations → Place Detail`.
+`Location consent/manual area → Home → Recommendations list/map → Place Detail → Google Maps`.
 
-Implementasi berada di `apps/web`, tanpa login. Data kategori, rekomendasi, daftar tempat, dan
-detail selalu berasal dari Public API. Koordinat yang dipakai untuk development/E2E adalah fixture
-berlabel **Data Simulasi** dan tidak disimpan.
+The browser location context lives only in the client provider. It is never copied into a guest
+navigation/share URL, local storage, logs, or a guest server profile. A refresh therefore returns
+honestly to the permission-not-requested state. Manual area selection uses the deterministic
+supported-area resolver described in `location-context.md`.
 
-## Batas Phase 4
+The normal recommendation radius is always 5,000 metres. List and map share the same API response
+and filters. A candidate beyond five kilometres remains fallback metadata until the guest chooses
+the explicit **Lihat kandidat di luar radius** action.
 
-- Radius tetap 5 km.
-- Tidak ada geolocation browser production, input lokasi manual, peta, kontribusi, aktivitas,
-  login, moderasi, atau navigasi eksternal.
-- Tombol arah pada detail sengaja nonaktif sampai Phase 5.
-- Bottom navigation hanya foundation visual dari Design System; flow selain Home belum
-  diimplementasikan.
-
-Dokumen lain di folder ini menjelaskan route, kontrak, state, privacy, testing, dan handoff Phase 5.
+Phase 5 does not add authentication, contribution, activity, admin workflows, background
+geolocation, location history, or deployment work.

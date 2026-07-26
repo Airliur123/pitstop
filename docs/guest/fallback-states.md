@@ -1,18 +1,16 @@
 # Fallback and error states
 
-Mapping mengikuti enum kontrak API, tanpa inferensi ranking di frontend:
+Recommendation fallback mapping remains typed and server-authored:
 
-| API reason          | Judul UI                     |
-| ------------------- | ---------------------------- |
-| `BUDGET_TOO_LOW`    | Belum ada yang sesuai budget |
-| `OUTSIDE_RADIUS`    | Hasil berada di luar radius  |
-| `ALL_PLACES_CLOSED` | Semua tempat sedang tutup    |
-| `NO_CATEGORY_MATCH` | Kategori belum tersedia      |
-| `NO_VERIFIED_MATCH` | Belum ada data terverifikasi |
+| API reason          | UI behaviour                                                         |
+| ------------------- | -------------------------------------------------------------------- |
+| `BUDGET_TOO_LOW`    | Explain the minimum valid main-meal price when provided              |
+| `OUTSIDE_RADIUS`    | Show actual distance, keep the candidate separate, require opt-in    |
+| `ALL_PLACES_CLOSED` | Explain closed matches and offer an explicit next action             |
+| `NO_CATEGORY_MATCH` | Explain that the category has no verified match in the normal radius |
+| `NO_VERIFIED_MATCH` | Explain that verified data is not available                          |
 
-Nilai tambahan seperti minimum budget dan jarak terdekat hanya ditampilkan bila diberikan API.
-Network/5xx memakai retry terbatas. 400/404 tidak di-retry, sedangkan 429 dapat di-retry maksimal
-dua kali dan menghormati `Retry-After` sampai 30 detik. Request ID hanya muncul pada error UI untuk
-dukungan operasional.
-
-Loading awal, load-more, empty, not-found, dan error memiliki treatment terpisah.
+Location fallbacks are separate from API fallbacks: permission denied, position unavailable,
+bounded timeout, retrying, and manual invalid each have a heading, live status, and keyboard
+accessible recovery actions. A stale or invalid location is never silently replaced with the old
+development fixture.

@@ -164,6 +164,22 @@ describe('Phase 3 public API foundation', () => {
     expect(redis.run).toHaveBeenCalledTimes(3);
   });
 
+  it('supports an explicit no-storage bypass without touching Redis', async () => {
+    const redis = { run: vi.fn() };
+    const cache = new PublicCacheService(
+      { REDIS_CACHE_ENABLED: true } as ConstructorParameters<typeof PublicCacheService>[0],
+      redis as unknown as ConstructorParameters<typeof PublicCacheService>[1],
+    );
+    const loader = vi.fn().mockResolvedValue({ result: 'spatial lookup' });
+
+    await expect(cache.bypass(loader)).resolves.toEqual({
+      value: { result: 'spatial lookup' },
+      status: 'BYPASS',
+    });
+    expect(loader).toHaveBeenCalledOnce();
+    expect(redis.run).not.toHaveBeenCalled();
+  });
+
   it('does not cache a loader error after deleting a malformed cache entry', async () => {
     const redis = { run: vi.fn().mockResolvedValueOnce('null').mockResolvedValueOnce(1) };
     const cache = new PublicCacheService(

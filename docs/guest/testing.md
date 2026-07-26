@@ -1,17 +1,21 @@
 # Testing
 
-## Unit dan component
+Unit/component coverage includes:
 
-Vitest/React Testing Library mencakup format rupiah/jarak, URL/query-key normalization, storage
-valid dan rusak, storage denied, hydration preference, API response validation, Problem Details,
-Retry-After, seluruh typed fallback, serta network retry action.
+- every location state and active source;
+- timeout, retry, and stale geolocation callback rejection;
+- deterministic manual resolver results and typed invalid errors;
+- no recommendation before active location;
+- fixed 5,000 metre requests and stable query keys;
+- URL privacy and invalid-budget rejection;
+- outside-radius separation and explicit action;
+- list/map state preservation and map failure with list fallback;
+- imperative Leaflet instance/layer/listener cleanup, Strict Mode remounts, and popup reselection;
+- shared Google Maps destination helper without user-origin coordinates.
 
-## Integration
+Playwright uses browser-context geolocation/permissions for granted and denied flows. Retry uses a
+deterministic browser adapter so an old callback can be delivered after the successful retry.
+Manual resolution and map rendering never depend on external geocoding, GPS, or map tiles in CI.
 
-Test database dan API Phase 1–3 tetap menjadi regression suite. Guest E2E menjalankan MySQL/Redis,
-migration, seed existing, API, dan web. Full E2E tidak mengganti API dengan hardcoded response.
-Network interruption hanya disimulasikan untuk memverifikasi recovery UI.
-
-Viewport regression: 320×568, 360×800, 390×844, 430×932, 768×1024, dan 1280×800. Skenario inti
-guest berjalan pada project 390 px dengan fixture Kalideres yang memakai tempat seed 24 jam;
-matriks lain menjalankan shell, accessibility, dan overflow suite.
+The Phase 5 browser matrix covers granted, denied, retry, manual valid, manual invalid, list/map,
+outside-radius, directions, keyboard/focus, and serious/critical axe violations.

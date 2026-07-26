@@ -20,6 +20,10 @@ export class PublicCacheService {
     @Inject(RedisService) private readonly redis: RedisService,
   ) {}
 
+  async bypass<T>(loader: () => Promise<T>): Promise<PublicCacheResult<T>> {
+    return { value: await loader(), status: 'BYPASS' };
+  }
+
   async remember<T>(
     namespace: string,
     keyInput: unknown,

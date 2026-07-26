@@ -308,19 +308,15 @@ describe.sequential('Phase 3 public API E2E', () => {
     expect(limited?.body).toMatchObject({ code: 'RATE_LIMITED', status: 429 });
   });
 
-  it('fails open to MySQL when Redis is unavailable', async () => {
+  it('keeps ordinary non-coordinate reads fail-open when Redis is unavailable', async () => {
     await redis?.stop();
     redis = undefined;
     const response = await request(getApp().getHttpServer())
-      .get('/api/v1/public/places')
-      .query({
-        latitude: '-6.1468',
-        longitude: '106.8061',
-        category: 'MAKAN_MURAH',
-        budgetAmount: '15000',
-      })
+      .get('/api/v1/public/categories')
       .expect(200);
-    expect(response.body.data[0]?.name).toBe('Warung Bu Ani');
+    expect(response.body.data).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'MAKAN_MURAH' })]),
+    );
     expect(response.body.meta.cache).toBe('BYPASS');
   });
 });

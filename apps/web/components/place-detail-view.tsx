@@ -1,10 +1,11 @@
 'use client';
 
-import { Button, Card, FacilityChip, LinkButton, Skeleton } from '@pitstop/ui';
+import { Card, FacilityChip, LinkButton, Skeleton } from '@pitstop/ui';
 import { useQuery } from '@tanstack/react-query';
 import { MapPin } from 'lucide-react';
 
 import { ApiProblem, getPlaceDetail } from '../lib/api/client';
+import { buildGoogleMapsDirectionsUrl } from '../lib/directions';
 import { formatRupiah, formatTime } from '../lib/format';
 import { queryKeys } from '../lib/query-keys';
 import { ApiErrorState } from './api-error-state';
@@ -66,6 +67,7 @@ export function PlaceDetailView({ slug }: Readonly<{ slug: string }>) {
 
   const place = detail.data.data;
   const mainMenus = place.menus.filter((menu) => menu.isMainItem && menu.isAvailable);
+  const directionsHref = buildGoogleMapsDirectionsUrl(place);
   return (
     <GuestShell backHref="/places" title="Detail Tempat">
       <main className="grid gap-3 px-4 pb-28 pt-3" id="main-content">
@@ -164,12 +166,15 @@ export function PlaceDetailView({ slug }: Readonly<{ slug: string }>) {
         </section>
       </main>
       <div className="fixed inset-x-0 bottom-0 z-[var(--pitstop-z-sticky)] mx-auto max-w-[430px] border-t border-border bg-surface px-4 py-3">
-        <Button aria-describedby="directions-phase-note" className="w-full" disabled type="button">
+        <LinkButton
+          aria-label={`Arahkan ke ${place.name} di Google Maps (buka tab baru)`}
+          className="w-full"
+          href={directionsHref}
+          rel="noopener noreferrer"
+          target="_blank"
+        >
           Arahkan Sekarang
-        </Button>
-        <p className="sr-only" id="directions-phase-note">
-          Navigasi eksternal tersedia pada Phase 5.
-        </p>
+        </LinkButton>
       </div>
     </GuestShell>
   );

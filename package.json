@@ -27,6 +27,7 @@
     "docker:logs": "docker compose logs --follow",
     "docker:reset": "docker compose down --volumes --remove-orphans",
     "db:generate": "pnpm --filter @pitstop/database db:generate",
+    "db:check": "pnpm --filter @pitstop/database db:check",
     "db:migrate": "pnpm --filter @pitstop/database db:migrate",
     "db:seed": "pnpm --filter @pitstop/database db:seed",
     "db:test": "pnpm --filter @pitstop/database db:test"

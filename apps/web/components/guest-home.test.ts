@@ -13,8 +13,9 @@ import type { ReactNode } from 'react';
 import { createElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type LocationController, useLocation } from '../hooks/use-location';
 import { getCategories, getRecommendations } from '../lib/api/client';
-import { getLocationContext } from '../lib/location';
+import type { ActiveLocation } from '../lib/location';
 import { GUEST_PREFERENCES_STORAGE_KEY } from '../lib/preferences';
 import { GuestHome } from './guest-home';
 
@@ -25,7 +26,7 @@ vi.mock('../lib/api/client', async (importOriginal) => {
   const original = await importOriginal<typeof import('../lib/api/client')>();
   return { ...original, getCategories: vi.fn(), getRecommendations: vi.fn() };
 });
-vi.mock('../lib/location', () => ({ getLocationContext: vi.fn() }));
+vi.mock('../hooks/use-location', () => ({ useLocation: vi.fn() }));
 
 const requestId = 'component-request' as RequestId;
 const categories: readonly PublicCategory[] = [
@@ -140,6 +141,36 @@ const recommendationResponse: ApiSuccess<RecommendationResult, RecommendationMet
   success: true,
 };
 
+const currentLocation: ActiveLocation = {
+  accuracy: 12,
+  id: 'current-location',
+  label: 'Lokasi saat ini',
+  latitude: -6.1,
+  longitude: 106.8,
+  queryKey: ['location', 'CURRENT', -6.1, 106.8],
+  source: 'CURRENT',
+  status: 'CURRENT_LOCATION_ACTIVE',
+  timestamp: 100,
+};
+
+function locationController(
+  state: LocationController['state'] = currentLocation,
+): LocationController {
+  return {
+    activeLocation:
+      state.status === 'CURRENT_LOCATION_ACTIVE' || state.status === 'MANUAL_LOCATION_ACTIVE'
+        ? state
+        : null,
+    activateManualLocation: vi.fn(),
+    openManualLocation: vi.fn(),
+    requestCurrentLocation: vi.fn(),
+    resetLocation: vi.fn(),
+    retryCurrentLocation: vi.fn(),
+    setManualLocationInvalid: vi.fn(),
+    state,
+  };
+}
+
 function TestQueryProvider({ children }: Readonly<{ children: ReactNode }>) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: 0 } },
@@ -151,123 +182,103 @@ function renderHome() {
   return render(createElement(GuestHome), { wrapper: TestQueryProvider });
 }
 
-describe('GuestHome', () => {
+describe('GuestHome Phase 5 location integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
-    vi.mocked(getLocationContext).mockReturnValue({
-      label: 'Lokasi Uji',
-      latitude: -6.1,
-      longitude: 106.8,
-      source: 'DEVELOPMENT_PREVIEW',
-      status: 'READY',
-    });
+    vi.mocked(useLocation).mockReturnValue(locationController());
     vi.mocked(getCategories).mockResolvedValue(categoriesResponse);
     vi.mocked(getRecommendations).mockResolvedValue(recommendationResponse);
   });
 
-  it('shows only the four official presets without custom budget controls', async () => {
+  it('does not request a recommendation or permission before explicit location action', async () => {
+    const controller = locationController({ status: 'PERMISSION_NOT_REQUESTED' });
+    vi.mocked(useLocation).mockReturnValue(controller);
+
     renderHome();
 
-    expect(await screen.findByRole('button', { name: 'Makan Murah' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: /Ubah budget/ }));
+    expect(await screen.findByRole('heading', { name: 'Lokasi belum aktif' })).toBeVisible();
+    expect(getRecommendations).not.toHaveBeenCalled();
+    expect(controller.requestCurrentLocation).not.toHaveBeenCalled();
 
+    fireEvent.click(screen.getByRole('button', { name: 'Gunakan lokasi saya' }));
+    expect(controller.requestCurrentLocation).toHaveBeenCalledOnce();
+  });
+
+  it('shows a stopped denied state with retry and manual actions', () => {
+    const controller = locationController({
+      attemptId: 1,
+      occurredAt: 100,
+      status: 'PERMISSION_DENIED',
+    });
+    vi.mocked(useLocation).mockReturnValue(controller);
+
+    renderHome();
+
+    expect(screen.getByText(/Izin lokasi ditolak/)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Coba lagi' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pilih area manual' }));
+    expect(controller.retryCurrentLocation).toHaveBeenCalledOnce();
+    expect(controller.openManualLocation).toHaveBeenCalledOnce();
+    expect(getRecommendations).not.toHaveBeenCalled();
+  });
+
+  it('uses active browser coordinates, fixed radius copy, and only one preview card', async () => {
+    renderHome();
+
+    expect(await screen.findByText('Pencarian normal selalu dibatasi radius 5 km.')).toBeVisible();
+    await waitFor(() =>
+      expect(getRecommendations).toHaveBeenCalledWith(
+        expect.objectContaining({
+          budgetAmount: 15_000,
+          category: 'MAKAN_MURAH',
+          latitude: -6.1,
+          longitude: 106.8,
+        }),
+        expect.any(AbortSignal),
+      ),
+    );
+    expect(await screen.findByRole('heading', { name: 'Tempat Utama' })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Alternatif' })).not.toBeInTheDocument();
+  });
+
+  it('keeps exactly four official budget presets and serializes only safe public state', async () => {
+    renderHome();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Ubah budget/ }));
     expect(
       screen.getAllByRole('button', { name: /^≤ Rp/ }).map((button) => button.textContent),
     ).toEqual(['≤ Rp10.000', '≤ Rp15.000', '≤ Rp20.000', '≤ Rp25.000']);
-    expect(screen.queryByPlaceholderText('Budget lainnya')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Budget rupiah lainnya')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Terapkan' })).not.toBeInTheDocument();
-  });
 
-  it('updates the active budget and sends the selected preset', async () => {
-    renderHome();
-
-    expect(await screen.findByRole('button', { name: 'Makan Murah' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: /Ubah budget/ }));
     fireEvent.click(screen.getByRole('button', { name: '≤ Rp20.000' }));
-
-    expect(screen.getByRole('button', { name: '≤ Rp20.000' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    await waitFor(() =>
-      expect(getRecommendations).toHaveBeenLastCalledWith(
-        expect.objectContaining({ budgetAmount: 20_000, category: 'MAKAN_MURAH' }),
-        expect.any(AbortSignal),
-      ),
-    );
-
     fireEvent.click(screen.getByRole('button', { name: 'Tutup lembar' }));
-    expect(screen.getByRole('button', { name: /Ubah budget.*≤ Rp20.000/ })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Cari Sekarang' }));
-    expect(push).toHaveBeenLastCalledWith('/places?category=MAKAN_MURAH&budget=20000');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ngopi' }));
-    await waitFor(() =>
-      expect(getRecommendations).toHaveBeenLastCalledWith(
-        expect.objectContaining({ budgetAmount: 20_000, category: 'NGOPI' }),
-        expect.any(AbortSignal),
-      ),
-    );
-    expect(screen.getByRole('button', { name: /Ubah budget.*≤ Rp20.000/ })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Cari Sekarang' }));
-    expect(push).toHaveBeenLastCalledWith('/places?category=NGOPI&budget=20000');
+    expect(push).toHaveBeenLastCalledWith('/places?category=MAKAN_MURAH&sort=NEAREST&budget=20000');
+    expect(String(push.mock.calls.at(-1)?.[0])).not.toMatch(/latitude|longitude|-6\.1|106\.8/);
   });
 
-  it('uses API categories, requires budget only when supported, and shows one preview', async () => {
+  it('keeps a budget stored but excludes it for a non-budget category', async () => {
+    window.localStorage.setItem(
+      GUEST_PREFERENCES_STORAGE_KEY,
+      '{"budgetAmount":25000,"version":1}',
+    );
     renderHome();
 
-    expect(await screen.findByRole('button', { name: 'Makan Murah' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    fireEvent.click(screen.getByRole('button', { name: /Ubah budget/ }));
-    expect(screen.getByRole('button', { name: '≤ Rp15.000' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Tutup lembar' }));
-    expect(await screen.findByRole('heading', { name: 'Tempat Utama' })).toBeVisible();
-    expect(screen.queryByRole('heading', { name: 'Alternatif' })).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Toilet' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Toilet' }));
     await waitFor(() =>
       expect(getRecommendations).toHaveBeenLastCalledWith(
         expect.objectContaining({ budgetAmount: null, category: 'TOILET' }),
         expect.any(AbortSignal),
       ),
     );
-    expect(screen.queryByRole('button', { name: '≤ Rp15.000' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Ubah budget/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cari Sekarang' }));
+    expect(push).toHaveBeenLastCalledWith('/places?category=TOILET&sort=NEAREST');
+    expect(window.localStorage.getItem(GUEST_PREFERENCES_STORAGE_KEY)).toBe(
+      '{"budgetAmount":25000,"version":1}',
+    );
   });
-
-  it.each([
-    ['Toilet', 'TOILET'],
-    ['Musala', 'MUSALA'],
-    ['Istirahat', 'ISTIRAHAT'],
-  ] as const)(
-    'keeps a stored budget inactive and out of requests for %s',
-    async (categoryName, categoryCode) => {
-      window.localStorage.setItem(
-        GUEST_PREFERENCES_STORAGE_KEY,
-        '{"budgetAmount":25000,"version":1}',
-      );
-      renderHome();
-
-      fireEvent.click(await screen.findByRole('button', { name: categoryName }));
-      await waitFor(() =>
-        expect(getRecommendations).toHaveBeenLastCalledWith(
-          expect.objectContaining({ budgetAmount: null, category: categoryCode }),
-          expect.any(AbortSignal),
-        ),
-      );
-      expect(screen.queryByRole('button', { name: /Ubah budget/ })).not.toBeInTheDocument();
-      expect(screen.getByRole('heading', { name: categoryName })).toBeVisible();
-      expect(window.localStorage.getItem(GUEST_PREFERENCES_STORAGE_KEY)).toBe(
-        '{"budgetAmount":25000,"version":1}',
-      );
-
-      fireEvent.click(screen.getByRole('button', { name: 'Cari Sekarang' }));
-      expect(push).toHaveBeenLastCalledWith(`/places?category=${categoryCode}`);
-    },
-  );
 
   it('does not activate an invalid budget restored from storage', async () => {
     window.localStorage.setItem(
@@ -282,13 +293,76 @@ describe('GuestHome', () => {
     expect(getRecommendations).not.toHaveBeenCalled();
   });
 
-  it('does not request a preview while location is unavailable', async () => {
-    vi.mocked(getLocationContext).mockReturnValue({ status: 'UNAVAILABLE' });
+  it('labels manual context and refreshes location without losing category or budget', async () => {
+    const rendered = renderHome();
+    fireEvent.click(await screen.findByRole('button', { name: 'Ngopi' }));
+    fireEvent.click(screen.getByRole('button', { name: /Ubah budget/ }));
+    fireEvent.click(screen.getByRole('button', { name: '≤ Rp20.000' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tutup lembar' }));
+
+    const manualLocation: ActiveLocation = {
+      id: 'kalideres-jakarta-barat',
+      label: 'Kalideres, Jakarta Barat',
+      latitude: -6.138,
+      longitude: 106.703,
+      queryKey: ['location', 'MANUAL', 'kalideres-jakarta-barat', -6.138, 106.703],
+      source: 'MANUAL',
+      status: 'MANUAL_LOCATION_ACTIVE',
+      timestamp: 200,
+    };
+    vi.mocked(useLocation).mockReturnValue(locationController(manualLocation));
+    rendered.rerender(createElement(GuestHome));
+
+    expect(await screen.findByText('Area manual')).toBeVisible();
+    expect(screen.getByText('Kalideres, Jakarta Barat')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Ngopi' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /Ubah budget.*≤ Rp20.000/ })).toBeVisible();
+    await waitFor(() =>
+      expect(getRecommendations).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          budgetAmount: 20_000,
+          category: 'NGOPI',
+          latitude: -6.138,
+          longitude: 106.703,
+        }),
+        expect.any(AbortSignal),
+      ),
+    );
+  });
+
+  it('keeps an outside-radius candidate separate behind an explicit action', async () => {
+    vi.mocked(getRecommendations).mockResolvedValue({
+      ...recommendationResponse,
+      data: { alternatives: [], primary: null },
+      meta: {
+        ...recommendationResponse.meta,
+        fallback: {
+          nearestDistanceMeters: 7_400,
+          nearestPlace: {
+            distanceMeters: 7_400,
+            id: recommendation.id,
+            name: recommendation.name,
+            primaryCategory,
+            slug: recommendation.slug,
+          },
+          reason: 'OUTSIDE_RADIUS',
+        },
+      },
+    });
+
     renderHome();
 
-    expect(await screen.findByRole('button', { name: 'Makan Murah' })).toBeVisible();
-    expect(getRecommendations).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Cari Sekarang' })).toBeDisabled();
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Belum ada tempat sesuai dalam radius 5 km',
+      }),
+    ).toBeVisible();
+    expect(screen.getByText(/7,4 km.*di luar radius normal 5 km/)).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Tempat Utama' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Lihat kandidat di luar radius' })).toHaveAttribute(
+      'href',
+      '/places/tempat-utama',
+    );
   });
 
   it('offers retry when category loading fails', async () => {

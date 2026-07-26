@@ -22,10 +22,11 @@ export default defineConfig({
       env: {
         NEXT_PUBLIC_API_BASE_URL: 'http://127.0.0.1:3002/api/v1',
         NEXT_PUBLIC_ENABLE_UI_CATALOG: 'true',
-        NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_ENABLED: 'true',
+        NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_ENABLED: 'false',
         NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_LABEL: 'Kalideres, Jakarta Barat',
         NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_LATITUDE: '-6.138',
         NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_LONGITUDE: '106.703',
+        NEXT_PUBLIC_MAP_TILES_DISABLED: 'true',
       },
       reuseExistingServer: false,
       timeout: 120_000,

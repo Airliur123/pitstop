@@ -1,15 +1,18 @@
 # Home
 
-Home mengambil kategori dari API, memilih kategori primary dari respons (fallback pertama bila
-tidak ada primary), lalu menerapkan `supportsBudget`.
+Home first renders an honest location state. Permission is not requested until the guest chooses
+**Gunakan lokasi saya**. Denied, unavailable, timeout, and retry states stop loading and expose
+retry plus manual-area actions. Manual invalid uses the approved “Lokasi tidak ditemukan” copy.
 
-- Kategori budget hanya menampilkan preset ≤ Rp10.000, ≤ Rp15.000, ≤ Rp20.000, dan ≤ Rp25.000.
-  Tidak ada budget bebas atau input nominal manual.
-- Kategori non-budget tidak menampilkan Budget Sheet, tidak mengirim budget, dan tidak terblokir
-  oleh budget yang masih tersimpan.
-- CTA aktif hanya setelah kategori, input wajib, dan location context siap.
-- Preview memakai recommendation endpoint dengan radius 5.000 meter dan `limit=1`.
-- Perubahan kategori/budget menghasilkan query key baru dan membatalkan request lama.
+After a current or manual location becomes active, Home:
 
-Home memiliki skeleton, retry network, typed fallback, dan maksimal satu place card. Tidak ada
-daftar penuh atau client-side ranking.
+- labels the source as current or manual;
+- keeps the five Phase 4 categories;
+- keeps only the four official budget presets (Rp10.000, Rp15.000, Rp20.000, Rp25.000);
+- omits budget for non-budget categories;
+- requests at most one preview with a fixed 5,000 metre radius;
+- never requests recommendations before a valid location exists;
+- cancels/ignores obsolete requests when location changes.
+
+Category and budget selection remain mounted while the guest changes location. Budget persistence
+is unchanged and contains no location data.
