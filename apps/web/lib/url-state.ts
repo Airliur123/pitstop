@@ -5,8 +5,10 @@ import {
   publicPlaceSorts,
 } from '@pitstop/contracts';
 
+import { DEFAULT_GUEST_BUDGET, type GuestBudgetPreset, isValidBudget } from './preferences';
+
 export interface PlacesUrlState {
-  readonly budgetAmount: number | null;
+  readonly budgetAmount: GuestBudgetPreset | null;
   readonly category: PublicCategoryCode;
   readonly sort: PublicPlaceSort;
 }
@@ -28,13 +30,15 @@ export function parsePlacesUrlState(
     ? (rawSort as PublicPlaceSort)
     : 'NEAREST';
   const budget = rawBudget && /^\d+$/.test(rawBudget) ? Number(rawBudget) : null;
+  const supportsBudget = category === 'MAKAN_MURAH' || category === 'NGOPI';
   return {
-    budgetAmount:
-      budget !== null && Number.isSafeInteger(budget) && budget >= 0 && budget <= 10_000_000
-        ? budget
-        : category === 'MAKAN_MURAH' || category === 'NGOPI'
-          ? 15_000
-          : null,
+    budgetAmount: supportsBudget
+      ? rawBudget === undefined
+        ? DEFAULT_GUEST_BUDGET
+        : isValidBudget(budget)
+          ? budget
+          : null
+      : null,
     category,
     sort,
   };

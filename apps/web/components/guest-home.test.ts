@@ -15,6 +15,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getCategories, getRecommendations } from '../lib/api/client';
 import { getLocationContext } from '../lib/location';
+import { GUEST_PREFERENCES_STORAGE_KEY } from '../lib/preferences';
 import { GuestHome } from './guest-home';
 
 const { push } = vi.hoisted(() => ({ push: vi.fn() }));
@@ -38,12 +39,39 @@ const categories: readonly PublicCategory[] = [
     supportsBudget: true,
   },
   {
+    code: 'NGOPI',
+    description: null,
+    id: 'ngopi',
+    isPrimary: false,
+    name: 'Ngopi',
+    sortOrder: 2,
+    supportsBudget: true,
+  },
+  {
     code: 'TOILET',
     description: null,
     id: 'toilet',
     isPrimary: false,
     name: 'Toilet',
-    sortOrder: 2,
+    sortOrder: 3,
+    supportsBudget: false,
+  },
+  {
+    code: 'MUSALA',
+    description: null,
+    id: 'musala',
+    isPrimary: false,
+    name: 'Musala',
+    sortOrder: 4,
+    supportsBudget: false,
+  },
+  {
+    code: 'ISTIRAHAT',
+    description: null,
+    id: 'istirahat',
+    isPrimary: false,
+    name: 'Istirahat',
+    sortOrder: 5,
     supportsBudget: false,
   },
 ];
@@ -138,6 +166,55 @@ describe('GuestHome', () => {
     vi.mocked(getRecommendations).mockResolvedValue(recommendationResponse);
   });
 
+  it('shows only the four official presets without custom budget controls', async () => {
+    renderHome();
+
+    expect(await screen.findByRole('button', { name: 'Makan Murah' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: /Ubah budget/ }));
+
+    expect(
+      screen.getAllByRole('button', { name: /^≤ Rp/ }).map((button) => button.textContent),
+    ).toEqual(['≤ Rp10.000', '≤ Rp15.000', '≤ Rp20.000', '≤ Rp25.000']);
+    expect(screen.queryByPlaceholderText('Budget lainnya')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Budget rupiah lainnya')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Terapkan' })).not.toBeInTheDocument();
+  });
+
+  it('updates the active budget and sends the selected preset', async () => {
+    renderHome();
+
+    expect(await screen.findByRole('button', { name: 'Makan Murah' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: /Ubah budget/ }));
+    fireEvent.click(screen.getByRole('button', { name: '≤ Rp20.000' }));
+
+    expect(screen.getByRole('button', { name: '≤ Rp20.000' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await waitFor(() =>
+      expect(getRecommendations).toHaveBeenLastCalledWith(
+        expect.objectContaining({ budgetAmount: 20_000, category: 'MAKAN_MURAH' }),
+        expect.any(AbortSignal),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tutup lembar' }));
+    expect(screen.getByRole('button', { name: /Ubah budget.*≤ Rp20.000/ })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Cari Sekarang' }));
+    expect(push).toHaveBeenLastCalledWith('/places?category=MAKAN_MURAH&budget=20000');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ngopi' }));
+    await waitFor(() =>
+      expect(getRecommendations).toHaveBeenLastCalledWith(
+        expect.objectContaining({ budgetAmount: 20_000, category: 'NGOPI' }),
+        expect.any(AbortSignal),
+      ),
+    );
+    expect(screen.getByRole('button', { name: /Ubah budget.*≤ Rp20.000/ })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Cari Sekarang' }));
+    expect(push).toHaveBeenLastCalledWith('/places?category=NGOPI&budget=20000');
+  });
+
   it('uses API categories, requires budget only when supported, and shows one preview', async () => {
     renderHome();
 
@@ -159,6 +236,50 @@ describe('GuestHome', () => {
       ),
     );
     expect(screen.queryByRole('button', { name: '≤ Rp15.000' })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['Toilet', 'TOILET'],
+    ['Musala', 'MUSALA'],
+    ['Istirahat', 'ISTIRAHAT'],
+  ] as const)(
+    'keeps a stored budget inactive and out of requests for %s',
+    async (categoryName, categoryCode) => {
+      window.localStorage.setItem(
+        GUEST_PREFERENCES_STORAGE_KEY,
+        '{"budgetAmount":25000,"version":1}',
+      );
+      renderHome();
+
+      fireEvent.click(await screen.findByRole('button', { name: categoryName }));
+      await waitFor(() =>
+        expect(getRecommendations).toHaveBeenLastCalledWith(
+          expect.objectContaining({ budgetAmount: null, category: categoryCode }),
+          expect.any(AbortSignal),
+        ),
+      );
+      expect(screen.queryByRole('button', { name: /Ubah budget/ })).not.toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: categoryName })).toBeVisible();
+      expect(window.localStorage.getItem(GUEST_PREFERENCES_STORAGE_KEY)).toBe(
+        '{"budgetAmount":25000,"version":1}',
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cari Sekarang' }));
+      expect(push).toHaveBeenLastCalledWith(`/places?category=${categoryCode}`);
+    },
+  );
+
+  it('does not activate an invalid budget restored from storage', async () => {
+    window.localStorage.setItem(
+      GUEST_PREFERENCES_STORAGE_KEY,
+      '{"budgetAmount":12000,"version":1}',
+    );
+    renderHome();
+
+    expect(await screen.findByRole('button', { name: 'Makan Murah' })).toBeVisible();
+    expect(screen.getByRole('button', { name: /Ubah budget.*Belum dipilih/ })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Cari Sekarang' })).toBeDisabled();
+    expect(getRecommendations).not.toHaveBeenCalled();
   });
 
   it('does not request a preview while location is unavailable', async () => {

@@ -12,7 +12,7 @@ describe('places URL state', () => {
     });
   });
 
-  it('uses conservative defaults for malformed values', () => {
+  it('rejects explicitly malformed values instead of silently changing the budget', () => {
     expect(
       parsePlacesUrlState({
         budget: ['-1', '20000'],
@@ -20,14 +20,21 @@ describe('places URL state', () => {
         sort: 'random',
       }),
     ).toEqual({
-      budgetAmount: 15_000,
+      budgetAmount: null,
       category: 'MAKAN_MURAH',
       sort: 'NEAREST',
     });
   });
 
+  it('uses the conservative preset only when the budget parameter is absent', () => {
+    expect(parsePlacesUrlState({ category: 'makan_murah' }).budgetAmount).toBe(15_000);
+    expect(
+      parsePlacesUrlState({ budget: '12000', category: 'makan_murah' }).budgetAmount,
+    ).toBeNull();
+  });
+
   it('does not invent a budget for categories that do not support it', () => {
-    expect(parsePlacesUrlState({ category: 'toilet' }).budgetAmount).toBeNull();
+    expect(parsePlacesUrlState({ budget: '20000', category: 'toilet' }).budgetAmount).toBeNull();
   });
 });
 

@@ -13,6 +13,7 @@ import type {
 } from '@pitstop/contracts';
 import type { z } from 'zod';
 
+import { type GuestBudgetPreset, isValidBudget } from '../preferences';
 import {
   categoriesResponseSchema,
   placeDetailResponseSchema,
@@ -34,6 +35,21 @@ export class ApiProblem extends Error {
     super(message);
     this.name = 'ApiProblem';
   }
+}
+
+export class ApiClientValidationError extends TypeError {
+  readonly code = 'INVALID_BUDGET';
+
+  constructor(readonly category: PublicCategoryCode) {
+    super(`Budget untuk ${category} harus menggunakan salah satu preset resmi.`);
+    this.name = 'ApiClientValidationError';
+  }
+}
+
+function budgetAmountForRequest(category: PublicCategoryCode, value: unknown) {
+  if (category !== 'MAKAN_MURAH' && category !== 'NGOPI') return null;
+  if (!isValidBudget(value)) throw new ApiClientValidationError(category);
+  return value;
 }
 
 export function normalizeApiBaseUrl(value: string | undefined) {
@@ -154,7 +170,7 @@ export function getCategories(signal?: AbortSignal) {
 }
 
 export interface RecommendationInput {
-  readonly budgetAmount: number | null;
+  readonly budgetAmount?: GuestBudgetPreset | null;
   readonly category: PublicCategoryCode;
   readonly latitude: number;
   readonly limit?: number;
@@ -163,9 +179,10 @@ export interface RecommendationInput {
 }
 
 export function getRecommendations(input: RecommendationInput, signal?: AbortSignal) {
+  const budgetAmount = budgetAmountForRequest(input.category, input.budgetAmount);
   return request<ApiSuccess<RecommendationResult, RecommendationMeta>>(
     `/public/recommendations${queryString({
-      budgetAmount: input.budgetAmount,
+      budgetAmount,
       category: input.category,
       latitude: input.latitude,
       limit: input.limit ?? 4,
@@ -183,9 +200,10 @@ export interface PlacesInput extends RecommendationInput {
 }
 
 export function getPlaces(input: PlacesInput, signal?: AbortSignal) {
+  const budgetAmount = budgetAmountForRequest(input.category, input.budgetAmount);
   return request<ApiSuccess<readonly PublicPlaceListItem[], PublicPlacesMeta>>(
     `/public/places${queryString({
-      budgetAmount: input.budgetAmount,
+      budgetAmount,
       category: input.category,
       cursor: input.cursor,
       latitude: input.latitude,

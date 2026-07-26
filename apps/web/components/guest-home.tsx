@@ -11,14 +11,13 @@ import { useGuestPreferences } from '../hooks/use-guest-preferences';
 import { getCategories, getRecommendations } from '../lib/api/client';
 import { formatRupiah } from '../lib/format';
 import { getLocationContext } from '../lib/location';
-import { isValidBudget } from '../lib/preferences';
+import { GUEST_BUDGET_PRESETS, type GuestBudgetPreset } from '../lib/preferences';
 import { queryKeys } from '../lib/query-keys';
 import { ApiErrorState } from './api-error-state';
 import { FallbackState } from './fallback-state';
 import { GuestShell } from './guest-shell';
 import { PlaceResultCard } from './place-result-card';
 
-const budgetOptions = [10_000, 15_000, 20_000, 25_000] as const;
 const categoryIcons = {
   ISTIRAHAT: Armchair,
   MAKAN_MURAH: Soup,
@@ -68,9 +67,10 @@ function CategorySelector({
 function BudgetSelector({
   budgetAmount,
   onChange,
-}: Readonly<{ budgetAmount: number | null; onChange: (value: number) => void }>) {
-  const [custom, setCustom] = useState('');
-  const customNumber = Number(custom);
+}: Readonly<{
+  budgetAmount: GuestBudgetPreset | null;
+  onChange: (value: GuestBudgetPreset) => void;
+}>) {
   return (
     <Sheet
       description="Pilih batas harga menu utama untuk pencarian ini."
@@ -85,7 +85,7 @@ function BudgetSelector({
       <fieldset>
         <legend className="mb-3 text-sm font-semibold">Budget aktif untuk menu utama</legend>
         <div className="grid grid-cols-2 gap-2">
-          {budgetOptions.map((amount) => (
+          {GUEST_BUDGET_PRESETS.map((amount) => (
             <button
               aria-pressed={budgetAmount === amount}
               className={
@@ -100,32 +100,6 @@ function BudgetSelector({
               ≤ {formatRupiah(amount)}
             </button>
           ))}
-        </div>
-        <div className="mt-3 flex gap-2">
-          <label className="sr-only" htmlFor="custom-budget">
-            Budget rupiah lainnya
-          </label>
-          <input
-            className="min-h-12 min-w-0 flex-1 rounded-button border border-border bg-surface px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-focus"
-            id="custom-budget"
-            inputMode="numeric"
-            min={1}
-            onChange={(event) => setCustom(event.target.value.replace(/\D/g, ''))}
-            placeholder="Budget lainnya"
-            type="text"
-            value={custom}
-          />
-          <Button
-            disabled={!isValidBudget(customNumber) || customNumber === 0}
-            onClick={() => {
-              onChange(customNumber);
-              setCustom('');
-            }}
-            type="button"
-            variant="secondary"
-          >
-            Terapkan
-          </Button>
         </div>
       </fieldset>
     </Sheet>
