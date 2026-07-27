@@ -1,8 +1,12 @@
+import { createHmac } from 'node:crypto';
+
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import {
   createDatabaseConnectionConfig,
   createDatabasePool,
+  createUlid,
   migrateDatabase,
+  type Pool,
   seedDatabase,
 } from '@pitstop/database';
 import request from 'supertest';
@@ -13,9 +17,28 @@ import { createApiApplication } from '../../src/bootstrap';
 import { createCacheKey } from '../../src/common/cache/cache-key';
 import { RedisService } from '../../src/common/redis/redis.service';
 
-describe.sequential('Phase 3 public API E2E', () => {
+const AUTH_TOKEN_SECRET = 'test-auth-token-secret-01234567890123456789';
+
+interface MailpitMessage {
+  readonly ID: string;
+  readonly To: readonly { readonly Address: string }[];
+}
+
+interface MailpitMessageList {
+  readonly messages: readonly MailpitMessage[];
+}
+
+interface MailpitMessageDetail {
+  readonly HTML?: string;
+  readonly Text?: string;
+}
+
+let mailpit: StartedTestContainer | undefined;
+
+describe.sequential('public and Phase 6 authentication API', () => {
   let app: NestFastifyApplication | undefined;
   let mysql: StartedTestContainer | undefined;
+  let pool: Pool | undefined;
   let redis: StartedTestContainer | undefined;
 
   const getApp = (): NestFastifyApplication => {
@@ -24,7 +47,7 @@ describe.sequential('Phase 3 public API E2E', () => {
   };
 
   beforeAll(async () => {
-    [mysql, redis] = await Promise.all([
+    [mysql, redis, mailpit] = await Promise.all([
       new GenericContainer('mysql:8.4.10')
         .withEnvironment({
           MYSQL_DATABASE: 'pitstop_api_test',
@@ -46,15 +69,15 @@ describe.sequential('Phase 3 public API E2E', () => {
         .withExposedPorts(6379)
         .withWaitStrategy(Wait.forLogMessage(/Ready to accept connections/i))
         .start(),
+      new GenericContainer('axllent/mailpit:v1.30.0')
+        .withExposedPorts(1025, 8025)
+        .withWaitStrategy(Wait.forHttp('/readyz', 8025))
+        .start(),
     ]);
     const databaseUrl = `mysql://pitstop_api_test:pitstop_api_test@${mysql.getHost()}:${mysql.getMappedPort(3306)}/pitstop_api_test`;
-    const pool = createDatabasePool(createDatabaseConnectionConfig({ DATABASE_URL: databaseUrl }));
-    try {
-      await migrateDatabase(pool);
-      await seedDatabase(pool);
-    } finally {
-      await pool.end();
-    }
+    pool = createDatabasePool(createDatabaseConnectionConfig({ DATABASE_URL: databaseUrl }));
+    await migrateDatabase(pool);
+    await seedDatabase(pool);
 
     Object.assign(process.env, {
       NODE_ENV: 'test',
@@ -68,8 +91,20 @@ describe.sequential('Phase 3 public API E2E', () => {
       S3_ACCESS_KEY: 'test-access',
       S3_SECRET_KEY: 'test-secret',
       S3_FORCE_PATH_STYLE: 'true',
-      MAIL_HOST: 'localhost',
-      MAIL_PORT: '1025',
+      MAIL_HOST: mailpit.getHost(),
+      MAIL_PORT: String(mailpit.getMappedPort(1025)),
+      MAIL_FROM_ADDRESS: 'noreply@pitstop.test',
+      WEB_BASE_URL: 'http://localhost:3000',
+      AUTH_TOKEN_SECRET,
+      AUTH_SESSION_SECRET: 'test-auth-session-secret-01234567890123456789',
+      AUTH_COOKIE_SECURE: 'false',
+      AUTH_MAGIC_LINK_TTL_SECONDS: '900',
+      AUTH_SESSION_TTL_SECONDS: '3600',
+      AUTH_REQUEST_IP_MAX: '20',
+      AUTH_REQUEST_EMAIL_MAX: '3',
+      AUTH_REQUEST_GLOBAL_MAX: '100',
+      AUTH_VERIFY_IP_MAX: '20',
+      AUTH_VERIFY_GLOBAL_MAX: '100',
       CORS_ALLOWED_ORIGINS: 'http://localhost:3000,http://localhost:3001',
       LOG_LEVEL: 'silent',
       PUBLIC_RATE_LIMIT_MAX: '20',
@@ -82,6 +117,8 @@ describe.sequential('Phase 3 public API E2E', () => {
 
   afterAll(async () => {
     await app?.close();
+    await pool?.end();
+    await mailpit?.stop();
     await redis?.stop();
     await mysql?.stop();
   });
@@ -97,6 +134,124 @@ describe.sequential('Phase 3 public API E2E', () => {
     });
     expect(response.headers['x-content-type-options']).toBe('nosniff');
     expect(response.headers['x-request-id']).toBe(response.body.meta.requestId);
+  });
+
+  it('requests, delivers, consumes once, persists, and revokes a passwordless session', async () => {
+    const email = `auth-${createUlid().toLowerCase()}@example.test`;
+    const agent = request.agent(getApp().getHttpServer());
+    const requested = await agent
+      .post('/api/v1/auth/email/request')
+      .send({ email: `  ${email.toUpperCase()}  `, returnTo: '/activity' })
+      .expect(202);
+    expect(requested.body.data).toEqual({ accepted: true });
+    expect(requested.headers['cache-control']).toContain('no-store');
+
+    const token = await latestMagicLinkToken(email);
+    const verified = await agent.post('/api/v1/auth/email/verify').send({ token }).expect(200);
+    expect(verified.body.data).toMatchObject({
+      authenticated: true,
+      returnTo: '/activity',
+      user: { role: 'USER' },
+    });
+    expect(verified.body.data.user.email).not.toBe(email);
+    expect(verified.headers['set-cookie'][0]).toContain('HttpOnly');
+    expect(verified.headers['set-cookie'][0]).toContain('SameSite=Lax');
+    expect(verified.headers['set-cookie'][0]).not.toContain('Secure');
+
+    const session = await agent.get('/api/v1/auth/session').expect(200);
+    expect(session.body.data).toMatchObject({ authenticated: true, user: { role: 'USER' } });
+
+    const replay = await request(getApp().getHttpServer())
+      .post('/api/v1/auth/email/verify')
+      .send({ token })
+      .expect(401);
+    expect(replay.body.code).toBe('AUTH_TOKEN_INVALID');
+    expect(replay.headers['cache-control']).toContain('no-store');
+
+    await agent.post('/api/v1/auth/logout').send({}).expect(403);
+    const loggedOut = await agent
+      .post('/api/v1/auth/logout')
+      .set('Origin', 'http://localhost:3000')
+      .send({})
+      .expect(200);
+    expect(loggedOut.body.data).toEqual({ authenticated: false });
+    expect(loggedOut.headers['set-cookie'][0]).toContain('Max-Age=0');
+    expect((await agent.get('/api/v1/auth/session').expect(200)).body.data).toEqual({
+      authenticated: false,
+    });
+  });
+
+  it('returns safe invalid and expired link errors without leaking raw tokens', async () => {
+    const invalid = await request(getApp().getHttpServer())
+      .post('/api/v1/auth/email/verify')
+      .send({ token: 'x'.repeat(43) })
+      .expect(401);
+    expect(invalid.body).toMatchObject({ code: 'AUTH_TOKEN_INVALID', status: 401 });
+    expect(invalid.text).not.toContain('x'.repeat(43));
+
+    const email = `expired-${createUlid().toLowerCase()}@example.test`;
+    await request(getApp().getHttpServer())
+      .post('/api/v1/auth/email/request')
+      .send({ email, returnTo: '/' })
+      .expect(202);
+    const token = await latestMagicLinkToken(email);
+    const tokenHash = createHmac('sha256', AUTH_TOKEN_SECRET).update(token).digest('hex');
+    await pool?.execute(
+      `UPDATE auth_login_tokens
+       SET created_at = DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 2 MINUTE),
+           expires_at = DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 1 MINUTE)
+       WHERE token_hash = ?`,
+      [tokenHash],
+    );
+    const expired = await request(getApp().getHttpServer())
+      .post('/api/v1/auth/email/verify')
+      .send({ token })
+      .expect(401);
+    expect(expired.body.code).toBe('AUTH_TOKEN_EXPIRED');
+    expect(expired.text).not.toContain(token);
+  });
+
+  it('normalizes requests, prevents enumeration, rejects open redirects, and rate limits by email', async () => {
+    const redisService = getApp().get(RedisService);
+    await redisService.run((client) => client.flushdb());
+    const invalidEmail = await request(getApp().getHttpServer())
+      .post('/api/v1/auth/email/request')
+      .send({ email: 'not-an-email', returnTo: '/' })
+      .expect(400);
+    expect(invalidEmail.body).toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
+
+    const firstEmail = `generic-${createUlid().toLowerCase()}@example.test`;
+    const secondEmail = `generic-${createUlid().toLowerCase()}@example.test`;
+    const first = await request(getApp().getHttpServer())
+      .post('/api/v1/auth/email/request')
+      .send({ email: firstEmail, returnTo: '/' })
+      .expect(202);
+    const second = await request(getApp().getHttpServer())
+      .post('/api/v1/auth/email/request')
+      .send({ email: secondEmail, returnTo: '/' })
+      .expect(202);
+    expect(second.body.data).toEqual(first.body.data);
+    await expect(latestMagicLinkToken(firstEmail)).resolves.toHaveLength(43);
+    await expect(latestMagicLinkToken(secondEmail)).resolves.toHaveLength(43);
+
+    await request(getApp().getHttpServer())
+      .post('/api/v1/auth/email/request')
+      .send({ email: 'user@example.test', returnTo: 'https://attacker.example' })
+      .expect(400);
+
+    await redisService.run((client) => client.flushdb());
+    const limitedEmail = `limited-${createUlid().toLowerCase()}@example.test`;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await request(getApp().getHttpServer())
+        .post('/api/v1/auth/email/request')
+        .send({ email: limitedEmail, returnTo: '/' })
+        .expect(202);
+    }
+    const limited = await request(getApp().getHttpServer())
+      .post('/api/v1/auth/email/request')
+      .send({ email: limitedEmail, returnTo: '/' })
+      .expect(429);
+    expect(limited.body.code).toBe('AUTH_RATE_LIMITED');
   });
 
   it('searches spatially with budget and returns a stable cursor page', async () => {
@@ -267,6 +422,10 @@ describe.sequential('Phase 3 public API E2E', () => {
         '/api/v1/public/places',
         '/api/v1/public/places/{slug}',
         '/api/v1/public/recommendations',
+        '/api/v1/auth/email/request',
+        '/api/v1/auth/email/verify',
+        '/api/v1/auth/session',
+        '/api/v1/auth/logout',
       ]),
     );
   });
@@ -318,5 +477,34 @@ describe.sequential('Phase 3 public API E2E', () => {
       expect.arrayContaining([expect.objectContaining({ code: 'MAKAN_MURAH' })]),
     );
     expect(response.body.meta.cache).toBe('BYPASS');
+    const authResponse = await request(getApp().getHttpServer())
+      .post('/api/v1/auth/email/request')
+      .send({ email: 'redis-down@example.test', returnTo: '/' })
+      .expect(503);
+    expect(authResponse.body.code).toBe('AUTH_RATE_LIMIT_UNAVAILABLE');
   });
 });
+
+async function latestMagicLinkToken(email: string): Promise<string> {
+  if (!mailpit) throw new Error('Mailpit integration container is not initialized');
+  const baseUrl = `http://${mailpit.getHost()}:${mailpit.getMappedPort(8025)}`;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const listResponse = await fetch(`${baseUrl}/api/v1/messages`);
+    const list = (await listResponse.json()) as MailpitMessageList;
+    const message = list.messages.find((candidate) =>
+      candidate.To.some((recipient) => recipient.Address.toLowerCase() === email.toLowerCase()),
+    );
+    if (message) {
+      const detailResponse = await fetch(
+        `${baseUrl}/api/v1/message/${encodeURIComponent(message.ID)}`,
+      );
+      const detail = (await detailResponse.json()) as MailpitMessageDetail;
+      const match = `${detail.Text ?? ''}\n${detail.HTML ?? ''}`.match(
+        /\/auth\/verify\?token=([A-Za-z0-9_-]{43})/,
+      );
+      if (match?.[1]) return match[1];
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`No Mailpit message arrived for ${email.replace(/^(.{2}).*(@.*)$/, '$1***$2')}`);
+}

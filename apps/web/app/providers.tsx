@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 
+import { AuthProvider } from '../components/auth-provider';
 import { LocationProvider } from '../hooks/use-location';
 import { ApiClientValidationError, ApiProblem } from '../lib/api/client';
 
@@ -39,7 +40,9 @@ export function Providers({ children }: Readonly<{ children: ReactNode }>) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <LocationProvider>{children}</LocationProvider>
+      <AuthProvider>
+        <LocationProvider>{children}</LocationProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

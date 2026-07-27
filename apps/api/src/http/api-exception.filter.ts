@@ -66,6 +66,9 @@ export class ApiExceptionFilter implements ExceptionFilter {
       ...(validationErrors ? { validationErrors } : {}),
     };
 
+    if ((request.url.split('?')[0] ?? request.url).includes('/auth/')) {
+      reply.header('cache-control', 'no-store, private').header('pragma', 'no-cache');
+    }
     reply
       .header('x-request-id', request.id)
       .type('application/problem+json')

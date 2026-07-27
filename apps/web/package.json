@@ -16,6 +16,7 @@
     "@pitstop/config": "workspace:*",
     "@pitstop/contracts": "workspace:*",
     "@pitstop/ui": "workspace:*",
+    "@pitstop/validation": "workspace:*",
     "@serwist/next": "9.5.12",
     "@tanstack/react-query": "5.101.4",
     "leaflet": "1.9.4",

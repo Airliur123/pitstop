@@ -85,3 +85,17 @@ remain release warnings despite the requested critical-threshold gate passing.
 The high `sharp` finding is accepted only for Phase 1 local-development database work. It must be
 remediated before production deployment, user-controlled image processing, or Phase 2 media work.
 This records the technical basis and does not substitute for release-owner approval.
+
+# Phase 6 authentication additions
+
+- `nodemailer@9.0.3` is the SMTP adapter for Mailpit and deployment SMTP providers. It supports the
+  locked Node.js 24 runtime, has no runtime dependencies, and avoids coupling the domain service to
+  a provider-specific HTTP SDK.
+- `@types/nodemailer@8.0.1` supplies TypeScript declarations compatible with the Nodemailer 9 API
+  surface used here.
+- `vitest@4.1.10` was added to `@pitstop/validation` development dependencies so the new shared auth
+  schemas are tested in their owning package. This is the same pinned test version already used by
+  the workspace and adds no production runtime code.
+
+The additions were checked against the locked Node/pnpm toolchain. No framework, database, workspace,
+or architecture dependency changed.

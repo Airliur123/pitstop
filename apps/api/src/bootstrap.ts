@@ -48,7 +48,7 @@ export async function createApiApplication(): Promise<NestFastifyApplication> {
 
   const swaggerConfiguration = new DocumentBuilder()
     .setTitle('PitStop API')
-    .setDescription('PitStop Phase 3 public places and recommendation REST API')
+    .setDescription('PitStop guest-first public and passwordless authentication REST API')
     .setVersion('1.0.0')
     .build();
   const openApiDocument = SwaggerModule.createDocument(app, swaggerConfiguration);

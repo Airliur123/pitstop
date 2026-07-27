@@ -26,7 +26,7 @@ try {
      WHERE table_schema = DATABASE() AND table_name <> '__drizzle_migrations'`,
   );
   const tableCount = Number(tableRows[0]?.count ?? 0);
-  if (tableCount !== 27) throw new Error(`Expected 27 domain tables, found ${tableCount}`);
+  if (tableCount !== 29) throw new Error(`Expected 29 domain tables, found ${tableCount}`);
 
   const [metadataRows] = await pool.query<PlaceMetadataRow[]>(
     `SELECT t.engine AS engineValue, t.table_collation AS tableCollation,

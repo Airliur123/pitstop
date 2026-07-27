@@ -39,7 +39,7 @@ export {
   Switch,
   Textarea,
 } from './components/form-controls';
-export type { AdminNavigationValue } from './components/navigation';
+export type { AdminNavigationValue, MobileNavigationValue } from './components/navigation';
 export {
   AdminSidebar,
   AdminTopbar,

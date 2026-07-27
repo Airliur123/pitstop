@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/mysql2';
 import { migrate } from 'drizzle-orm/mysql2/migrator';
-import { createPool, type Pool, type RowDataPacket } from 'mysql2/promise';
+import { createPool, type Pool, type ResultSetHeader, type RowDataPacket } from 'mysql2/promise';
 import { GenericContainer, type StartedTestContainer, Wait } from 'testcontainers';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -42,6 +42,8 @@ interface NumberRow extends RowDataPacket {
 const expectedTables = [
   'audit_logs',
   'auth_accounts',
+  'auth_login_tokens',
+  'auth_sessions',
   'categories',
   'contribution_payloads',
   'contribution_photos',
@@ -119,7 +121,7 @@ describe.sequential('MySQL 8.4 spatial database', () => {
   it('1. migrates an empty MySQL database', async () => {
     expect(
       await countRows(getPool(), 'information_schema.tables', 'table_schema = DATABASE()'),
-    ).toBe(28);
+    ).toBe(30);
   });
 
   it('2. runs migration again without schema drift', async () => {
@@ -129,7 +131,7 @@ describe.sequential('MySQL 8.4 spatial database', () => {
     const [rows] = await getPool().query<CountRow[]>(
       'SELECT COUNT(*) AS count FROM __drizzle_migrations',
     );
-    expect(Number(rows[0]?.count)).toBe(5);
+    expect(Number(rows[0]?.count)).toBe(6);
   });
 
   it('3. creates every required domain table', async () => {
@@ -173,6 +175,96 @@ describe.sequential('MySQL 8.4 spatial database', () => {
         [createUlid(), userId],
       ),
     ).rejects.toMatchObject({ code: 'ER_DUP_ENTRY' });
+  });
+
+  it('6a. creates indexed auth token and session tables with unique hashes', async () => {
+    const userId = await insertUser(getPool(), uniqueEmail('auth-index'));
+    const tokenHash = 'a'.repeat(64);
+    await insertLoginToken(getPool(), userId, tokenHash);
+    await expect(insertLoginToken(getPool(), userId, tokenHash)).rejects.toMatchObject({
+      code: 'ER_DUP_ENTRY',
+    });
+
+    const [indexes] = await getPool().query<StringRow[]>(
+      `SELECT index_name AS value FROM information_schema.statistics
+       WHERE table_schema = DATABASE()
+         AND table_name IN ('auth_login_tokens', 'auth_sessions')`,
+    );
+    expect(indexes.map((row) => row.value)).toEqual(
+      expect.arrayContaining([
+        'uq_auth_login_tokens_token_hash',
+        'idx_auth_login_tokens_expires',
+        'idx_auth_login_tokens_user_consumed',
+        'uq_auth_sessions_token_hash',
+        'idx_auth_sessions_expires',
+        'idx_auth_sessions_user_revoked',
+      ]),
+    );
+  });
+
+  it('6b. consumes a login token atomically at most once', async () => {
+    const userId = await insertUser(getPool(), uniqueEmail('auth-atomic'));
+    const tokenHash = 'b'.repeat(64);
+    await insertLoginToken(getPool(), userId, tokenHash);
+    const consume = () =>
+      getPool().execute<ResultSetHeader>(
+        `UPDATE auth_login_tokens SET consumed_at = CURRENT_TIMESTAMP(3)
+         WHERE token_hash = ? AND consumed_at IS NULL
+           AND expires_at > CURRENT_TIMESTAMP(3)`,
+        [tokenHash],
+      );
+    const results = await Promise.all([consume(), consume()]);
+    expect(results.map(([result]) => result.affectedRows).sort()).toEqual([0, 1]);
+  });
+
+  it('6c. rejects expired login tokens without making them reusable', async () => {
+    const userId = await insertUser(getPool(), uniqueEmail('auth-expired'));
+    const tokenHash = 'c'.repeat(64);
+    await insertLoginToken(getPool(), userId, tokenHash);
+    await getPool().execute(
+      `UPDATE auth_login_tokens
+       SET created_at = DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 2 MINUTE),
+           expires_at = DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 1 MINUTE)
+       WHERE token_hash = ?`,
+      [tokenHash],
+    );
+    const [result] = await getPool().execute<ResultSetHeader>(
+      `UPDATE auth_login_tokens SET consumed_at = CURRENT_TIMESTAMP(3)
+       WHERE token_hash = ? AND consumed_at IS NULL
+         AND expires_at > CURRENT_TIMESTAMP(3)`,
+      [tokenHash],
+    );
+    expect(result.affectedRows).toBe(0);
+  });
+
+  it('6d. excludes expired and revoked sessions from active lookup', async () => {
+    const userId = await insertUser(getPool(), uniqueEmail('auth-session'));
+    const activeHash = 'd'.repeat(64);
+    const expiredHash = 'e'.repeat(64);
+    const revokedHash = 'f'.repeat(64);
+    await insertSession(getPool(), userId, activeHash, '1 DAY');
+    await insertSession(getPool(), userId, expiredHash, '1 DAY');
+    await insertSession(getPool(), userId, revokedHash, '1 DAY');
+    await getPool().execute(
+      `UPDATE auth_sessions
+       SET created_at = DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 2 MINUTE),
+           expires_at = DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 1 MINUTE)
+       WHERE session_token_hash = ?`,
+      [expiredHash],
+    );
+    await getPool().execute(
+      'UPDATE auth_sessions SET revoked_at = CURRENT_TIMESTAMP(3) WHERE session_token_hash = ?',
+      [revokedHash],
+    );
+    expect(
+      await scalarCount(
+        getPool(),
+        `SELECT COUNT(*) AS count FROM auth_sessions
+         WHERE session_token_hash IN (?, ?, ?)
+           AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP(3)`,
+        [activeHash, expiredHash, revokedHash],
+      ),
+    ).toBe(1);
   });
 
   it('7. enforces Google Form submission idempotency', async () => {
@@ -782,6 +874,28 @@ async function insertUser(pool: Pool, email: string): Promise<Ulid> {
     [id, email, email.trim().toLowerCase()],
   );
   return id;
+}
+
+async function insertLoginToken(pool: Pool, userId: Ulid, tokenHash: string): Promise<void> {
+  await pool.execute(
+    `INSERT INTO auth_login_tokens (id, user_id, token_hash, return_to, expires_at)
+     VALUES (?, ?, ?, '/', DATE_ADD(CURRENT_TIMESTAMP(3), INTERVAL 15 MINUTE))`,
+    [createUlid(), userId, tokenHash],
+  );
+}
+
+async function insertSession(
+  pool: Pool,
+  userId: Ulid,
+  sessionTokenHash: string,
+  expiresInterval: '1 DAY',
+): Promise<void> {
+  if (expiresInterval !== '1 DAY') throw new Error('Unsupported test session interval');
+  await pool.execute(
+    `INSERT INTO auth_sessions (id, user_id, session_token_hash, expires_at)
+     VALUES (?, ?, ?, DATE_ADD(CURRENT_TIMESTAMP(3), INTERVAL 1 DAY))`,
+    [createUlid(), userId, sessionTokenHash],
+  );
 }
 
 async function insertPlace(pool: Pool, slug: string): Promise<Ulid> {

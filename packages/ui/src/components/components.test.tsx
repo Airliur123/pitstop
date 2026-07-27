@@ -156,6 +156,9 @@ test('skeleton is hidden from the accessibility tree', () => {
 test('mobile bottom navigation marks the current page', () => {
   render(<MobileBottomNavigation current="activity" />);
   expect(screen.getByRole('link', { name: 'Aktivitas' })).toHaveAttribute('aria-current', 'page');
+  expect(screen.getByRole('link', { name: 'Beranda' })).toHaveAttribute('href', '/');
+  expect(screen.getByRole('link', { name: 'Tambah' })).toHaveAttribute('href', '/contribute');
+  expect(screen.getByRole('link', { name: 'Aktivitas' })).toHaveAttribute('href', '/activity');
 });
 
 test('admin sidebar exposes keyboard-accessible navigation', async () => {

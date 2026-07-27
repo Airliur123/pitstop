@@ -15,6 +15,8 @@ const validEnvironment: NodeJS.ProcessEnv = {
   S3_FORCE_PATH_STYLE: 'true',
   MAIL_HOST: 'localhost',
   MAIL_PORT: '1025',
+  MAIL_SECURE: 'false',
+  MAIL_FROM_ADDRESS: 'noreply@pitstop.local',
   CORS_ALLOWED_ORIGINS: 'http://localhost:3000,http://localhost:3001',
   LOG_LEVEL: 'silent',
   API_SWAGGER_ENABLED: 'true',
@@ -28,6 +30,8 @@ describe('API environment parser', () => {
     expect(parsed.S3_FORCE_PATH_STYLE).toBe(true);
     expect(parsed.PUBLIC_RATE_LIMIT_MAX).toBe(60);
     expect(parsed.CACHE_CATEGORIES_TTL_SECONDS).toBe(300);
+    expect(parsed.AUTH_MAGIC_LINK_TTL_SECONDS).toBe(900);
+    expect(parsed.AUTH_SESSION_TTL_SECONDS).toBe(2_592_000);
   });
 
   it('rejects invalid ports and missing secrets with clear paths', () => {
@@ -61,8 +65,37 @@ describe('API environment parser', () => {
         NODE_ENV: 'production',
         LOG_LEVEL: 'info',
         PUBLIC_CURSOR_SIGNING_SECRET: 'production-cursor-signing-secret-0123456789',
+        AUTH_TOKEN_SECRET: 'production-auth-token-secret-0123456789',
+        AUTH_SESSION_SECRET: 'production-session-secret-0123456789',
+        AUTH_COOKIE_SECURE: 'true',
+        WEB_BASE_URL: 'https://pitstop.example',
+        MAIL_HOST: 'smtp.example',
       }).PUBLIC_CURSOR_SIGNING_SECRET,
     ).toBe('production-cursor-signing-secret-0123456789');
+  });
+
+  it('fails closed for unsafe production authentication configuration', () => {
+    expect(() =>
+      parseApiEnvironment({
+        ...validEnvironment,
+        NODE_ENV: 'production',
+        LOG_LEVEL: 'info',
+        PUBLIC_CURSOR_SIGNING_SECRET: 'production-cursor-signing-secret-0123456789',
+      }),
+    ).toThrow(/AUTH_TOKEN_SECRET/);
+    expect(() =>
+      parseApiEnvironment({
+        ...validEnvironment,
+        NODE_ENV: 'production',
+        LOG_LEVEL: 'info',
+        PUBLIC_CURSOR_SIGNING_SECRET: 'production-cursor-signing-secret-0123456789',
+        AUTH_TOKEN_SECRET: 'production-auth-token-secret-0123456789',
+        AUTH_SESSION_SECRET: 'production-session-secret-0123456789',
+        AUTH_COOKIE_SECURE: 'false',
+        WEB_BASE_URL: 'https://pitstop.example',
+        MAIL_HOST: 'smtp.example',
+      }),
+    ).toThrow(/AUTH_COOKIE_SECURE/);
   });
 });
 

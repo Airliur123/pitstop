@@ -2,10 +2,10 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 
 const routes = [
-  'http://127.0.0.1:3000/',
-  'http://127.0.0.1:3000/dev/ui',
-  'http://127.0.0.1:3001/',
-  'http://127.0.0.1:3001/dev/ui',
+  'http://localhost:3100/',
+  'http://localhost:3100/dev/ui',
+  'http://localhost:3101/',
+  'http://localhost:3101/dev/ui',
 ] as const;
 
 test('web and admin shells render without horizontal overflow', async ({ page }) => {
@@ -30,7 +30,7 @@ test('focus indicators and primary navigation are keyboard-visible', async ({ pa
   const activityFocus = await activity.evaluate((element) => getComputedStyle(element).boxShadow);
   expect(activityFocus).not.toBe('none');
 
-  await page.goto('http://127.0.0.1:3001/');
+  await page.goto('http://localhost:3101/');
   const dashboard = page.getByRole('link', { name: 'Dashboard' });
   await dashboard.focus();
   await expect(dashboard).toBeFocused();

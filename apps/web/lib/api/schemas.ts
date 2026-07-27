@@ -1,6 +1,11 @@
 import {
   type ApiSuccess,
+  authRoleValues,
+  type AuthSession,
   type CategoriesMeta,
+  type LogoutResult,
+  type MagicLinkRequestResult,
+  type MagicLinkVerificationResult,
   openStatuses,
   type PlaceDetailMeta,
   type PublicCategory,
@@ -89,6 +94,41 @@ function successEnvelope<T extends z.ZodType, M extends z.ZodType>(data: T, meta
     success: z.literal(true),
   });
 }
+
+const authUser = z.object({
+  email: z.string().min(1),
+  id: z.string().min(1),
+  role: z.enum(authRoleValues),
+});
+
+const authSession = z.discriminatedUnion('authenticated', [
+  z.object({ authenticated: z.literal(false) }),
+  z.object({ authenticated: z.literal(true), user: authUser }),
+]) satisfies z.ZodType<AuthSession>;
+
+export const authSessionResponseSchema = successEnvelope(
+  authSession,
+  responseMeta,
+) satisfies z.ZodType<ApiSuccess<AuthSession>>;
+
+export const magicLinkRequestResponseSchema = successEnvelope(
+  z.object({ accepted: z.literal(true) }),
+  responseMeta,
+) satisfies z.ZodType<ApiSuccess<MagicLinkRequestResult>>;
+
+export const magicLinkVerificationResponseSchema = successEnvelope(
+  z.object({
+    authenticated: z.literal(true),
+    returnTo: z.string().min(1),
+    user: authUser,
+  }),
+  responseMeta,
+) satisfies z.ZodType<ApiSuccess<MagicLinkVerificationResult>>;
+
+export const logoutResponseSchema = successEnvelope(
+  z.object({ authenticated: z.literal(false) }),
+  responseMeta,
+) satisfies z.ZodType<ApiSuccess<LogoutResult>>;
 
 export const categoriesResponseSchema = successEnvelope(
   z.array(category),

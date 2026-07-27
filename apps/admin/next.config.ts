@@ -9,6 +9,7 @@ const environment = parseAdminEnvironment(loadWorkspaceEnvironment(workspaceRoot
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ['127.0.0.1'],
+  distDir: process.env.PITSTOP_E2E === 'true' ? '.next-e2e' : '.next',
   reactStrictMode: true,
   transpilePackages: ['@pitstop/config', '@pitstop/contracts', '@pitstop/ui'],
   env: {

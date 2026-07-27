@@ -39,23 +39,29 @@ export function AppHeader({
       </span>
       <span className="flex-1" />
       {!backHref ? (
-        <IconButton aria-label="Profil pengguna">
+        <a
+          aria-label="Masuk atau lihat profil"
+          className="flex size-12 items-center justify-center rounded-button text-muted outline-none focus-visible:ring-2 focus-visible:ring-focus"
+          href="/login"
+        >
           <UserRound aria-hidden="true" className="size-6" />
-        </IconButton>
+        </a>
       ) : null}
     </header>
   );
 }
 
 const mobileItems = [
-  { href: '#beranda', icon: Home, label: 'Beranda', value: 'home' },
-  { href: '#tambah', icon: CirclePlus, label: 'Tambah', value: 'add' },
-  { href: '#aktivitas', icon: Activity, label: 'Aktivitas', value: 'activity' },
+  { href: '/', icon: Home, label: 'Beranda', value: 'home' },
+  { href: '/contribute', icon: CirclePlus, label: 'Tambah', value: 'add' },
+  { href: '/activity', icon: Activity, label: 'Aktivitas', value: 'activity' },
 ] as const;
+
+export type MobileNavigationValue = (typeof mobileItems)[number]['value'];
 
 export function MobileBottomNavigation({
   current = 'home',
-}: Readonly<{ current?: (typeof mobileItems)[number]['value'] }>) {
+}: Readonly<{ current?: MobileNavigationValue }>) {
   return (
     <nav
       aria-label="Navigasi utama"

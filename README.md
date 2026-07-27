@@ -1,8 +1,8 @@
 # PitStop Mobile PWA & Admin MVP
 
 PitStop is a mobile-first PWA for helping Indonesian ride-hailing drivers find practical stops.
-The repository has completed the engineering foundation through the Phase 4 guest mobile vertical
-slice.
+The repository has completed the engineering foundation through Phase 5 and now implements the
+Phase 6 guest-first passwordless authentication slice.
 
 ## Current status
 
@@ -16,15 +16,18 @@ slice.
   recommendations, caching, rate limiting, and API integration tests.
 - **Phase 4 - Guest mobile vertical slice:** Home, Recommendations, and Place Detail connected to the
   public API, with browser E2E and accessibility coverage.
+- **Phase 5 - Location, radius, map, and directions:** browser/manual location, fixed-radius
+  behavior, synchronized list/map, and safe Google Maps directions.
+- **Phase 6 - Guest-first authentication:** optional email magic links, HttpOnly revocable sessions,
+  USER/ADMIN authorization foundations, Mailpit delivery, and protected next-phase placeholders.
 
-Phase 5 is next: browser geolocation, permission and location states, manual location and its invalid
-state, radius behavior, an optional map, and Google Maps directions. These Phase 5 capabilities are
-not implemented yet; Phase 4 uses an explicitly labelled development/E2E location fixture.
+Contribution submission, activity data, profile management, and moderation remain deferred to their
+own phases.
 
 ### Milestones
 
-The repository contains the verified milestone tags `phase-1-complete`, `phase-2-complete`,
-`phase-3-complete`, and `phase-4-complete`.
+The repository contains the verified milestone tags through `phase-5-complete`. Phase 6 work is
+present on the current branch and is not tagged by this implementation.
 
 ## Implemented features
 
@@ -34,12 +37,14 @@ The repository contains the verified milestone tags `phase-1-complete`, `phase-2
 - A typed API client with runtime response validation and opaque keyset pagination.
 - Loading, empty, network error, rate-limit, not-found, and recommendation fallback states.
 - MySQL Spatial and the Drizzle data layer, plus Redis-backed public caching and rate limiting.
+- Optional passwordless email sign-in, revocable sessions, safe return routing, and auth-specific
+  fail-closed rate limiting.
 - Shared accessible UI components used by the web and admin application foundations.
 - Unit and component tests, MySQL/API integration tests, browser E2E tests, and axe accessibility
   checks.
 
-Authentication, contribution, activity, admin moderation, browser geolocation, maps, and external
-directions are not active features on this branch.
+Contribution and activity business data, profile editing, OAuth/password flows, and admin moderation
+are not active features on this branch.
 
 ## Prerequisites
 
@@ -100,8 +105,8 @@ pnpm --filter @pitstop/worker dev
 | `pnpm typecheck`            | Run strict TypeScript checks                           |
 | `pnpm test`                 | Run workspace unit and component test tasks            |
 | `pnpm db:test`              | Run MySQL Spatial and database integration tests       |
-| `pnpm test:api:integration` | Run the public API integration suite                   |
-| `pnpm test:integration`     | Alias for the public API integration suite             |
+| `pnpm test:api:integration` | Run public and auth API integration with containers    |
+| `pnpm test:integration`     | Alias for the API integration suite                    |
 | `pnpm test:e2e`             | Run Playwright browser E2E and axe accessibility tests |
 | `pnpm format`               | Apply Prettier formatting                              |
 | `pnpm format:check`         | Check formatting without changes                       |
@@ -113,11 +118,11 @@ pnpm --filter @pitstop/worker dev
 
 ## Repository map
 
-- `apps/web` - Phase 4 guest Home, Recommendations, Place Detail, typed API client, and resilient
-  guest states
+- `apps/web` - guest Home/search/detail plus optional login, callback, session provider, and
+  protected placeholders
 - `apps/admin` - separate administration shell and shared UI catalog; moderation is not implemented
-- `apps/api` - NestJS/Fastify public categories, places, detail, and recommendations REST API with
-  Redis cache/rate limiting
+- `apps/api` - NestJS/Fastify public resources and passwordless authentication with Redis
+  cache/rate limiting
 - `apps/worker` - BullMQ/Redis worker bootstrap and lifecycle foundation
 - `packages/database` - Drizzle schema, migrations, seed, MySQL Spatial queries, and integration tests
 - `packages/ui` - shared semantic tokens, accessible components, and web/admin layout primitives
@@ -150,6 +155,6 @@ there is no local v1.1 PDF on this branch.
 
 The visual source of truth is
 [PitStop Design v1.1 - Flow Clarification Update](https://www.figma.com/design/ULbSs8WJIfXZxqo0g5QUPA/PitStop-Mobile-PWA---Admin-MVP).
-The current delivery status is **Ready for Phase 5**. Phase 5 remains the next implementation stage
-for browser geolocation, permission and location states, manual and invalid manual location, radius
-behavior, the optional map, and Google Maps directions.
+The connected file still reports **Ready for Phase 5** and does not contain the named Phase 6 auth
+frames. Phase 6 therefore follows the accepted brief and existing design-system foundations; the
+design-file status is an explicit follow-up rather than silently assumed complete.

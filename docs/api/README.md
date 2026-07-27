@@ -1,4 +1,4 @@
-# PitStop Public API v1
+# PitStop API v1
 
 Phase 3 exposes guest-readable REST resources under `/api/v1/public`:
 
@@ -8,6 +8,15 @@ Phase 3 exposes guest-readable REST resources under `/api/v1/public`:
 | GET    | `/public/places`          | Spatial, category, and budget search    |
 | GET    | `/public/places/:slug`    | Canonical public detail                 |
 | GET    | `/public/recommendations` | One primary plus at most 3 alternatives |
+
+Phase 6 adds optional passwordless authentication under `/api/v1/auth`:
+
+| Method | Route                 | Purpose                                  |
+| ------ | --------------------- | ---------------------------------------- |
+| POST   | `/auth/email/request` | Send a generic one-time-link response    |
+| POST   | `/auth/email/verify`  | Atomically consume a link and set cookie |
+| GET    | `/auth/session`       | Read minimal current session state       |
+| POST   | `/auth/logout`        | Revoke and clear the current session     |
 
 Health remains at `/health/live` and `/health/ready`. Swagger UI is `/api/docs` and JSON is
 `/api/openapi.json` when `API_SWAGGER_ENABLED=true`.
@@ -27,7 +36,8 @@ Success responses keep the specification envelope and add consistent metadata:
 ```
 
 All sample names are Data Simulasi. Public queries expose only `ACTIVE`, `ADMIN_VERIFIED`,
-non-deleted places. No Phase 4 UI, authentication, mutation, upload, or asset URL is implemented.
+non-deleted places. Authentication is optional and does not gate these reads. No contribution,
+upload, moderation, or asset URL is implemented.
 
 The Product Specification table uses `/categories`, `/places`, and `/places/recommendations`.
 The accepted Phase 3 execution definition requires the explicit `/public/*` namespace, which is
@@ -35,4 +45,4 @@ used here to keep the guest security/rate-limit boundary unambiguous. This route
 documented rather than silently treated as equivalent.
 
 See the endpoint, error, pagination, cache, rate-limit, OpenAPI, testing, and security documents in
-this directory.
+this directory, plus [the Phase 6 authentication guide](../authentication/README.md).

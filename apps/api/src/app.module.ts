@@ -12,6 +12,8 @@ import { API_ENVIRONMENT, type ApiEnvironmentProvider } from './configuration';
 import { ConfigurationModule } from './configuration.module';
 import { ApiExceptionFilter } from './http/api-exception.filter';
 import { RequestIdInterceptor } from './http/request-id.interceptor';
+import { AuthModule } from './modules/auth/auth.module';
+import { AUTH_LOG_REDACTION_PATHS } from './modules/auth/auth-security';
 import { HealthController } from './modules/health/health.controller';
 import { HealthService } from './modules/health/health.service';
 import { PublicCategoriesModule } from './modules/public-categories/public-categories.module';
@@ -24,6 +26,7 @@ import { RecommendationsModule } from './modules/recommendations/recommendations
     DatabaseModule,
     RedisModule,
     CacheModule,
+    AuthModule,
     PublicCategoriesModule,
     PublicPlacesModule,
     RecommendationsModule,
@@ -50,13 +53,7 @@ import { RecommendationsModule } from './modules/recommendations/recommendations
             },
           },
           redact: {
-            paths: [
-              'req.headers.authorization',
-              'req.headers.cookie',
-              'req.headers.x-integration-signature',
-              'password',
-              'token',
-            ],
+            paths: [...AUTH_LOG_REDACTION_PATHS],
             censor: '[REDACTED]',
           },
         },

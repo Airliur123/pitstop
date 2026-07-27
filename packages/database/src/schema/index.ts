@@ -15,7 +15,15 @@ import {
   moderationReviews,
 } from './contributions';
 import { auditLogs, placeChangeHistory } from './governance';
-import { authAccounts, refreshTokens, roles, userRoles, users } from './identity';
+import {
+  authAccounts,
+  authLoginTokens,
+  authSessions,
+  refreshTokens,
+  roles,
+  userRoles,
+  users,
+} from './identity';
 import {
   geocodingResults,
   googleFormSubmissions,
@@ -41,6 +49,8 @@ export const databaseSchema = {
   userRoles,
   authAccounts,
   refreshTokens,
+  authLoginTokens,
+  authSessions,
   places,
   categories,
   placeCategories,
