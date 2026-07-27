@@ -1,6 +1,9 @@
 import type {
   ApiSuccess,
+  AuthSession,
   CategoriesMeta,
+  LogoutResult,
+  MagicLinkRequestResult,
   PlaceDetailMeta,
   PublicCategory,
   PublicCategoryCode,
@@ -11,12 +14,16 @@ import type {
   RecommendationMeta,
   RecommendationResult,
 } from '@pitstop/contracts';
+import type { MagicLinkRequestInput } from '@pitstop/validation';
 import type { z } from 'zod';
 
 import { NORMAL_RADIUS_METERS } from '../location';
 import { type GuestBudgetPreset, isValidBudget } from '../preferences';
 import {
+  authSessionResponseSchema,
   categoriesResponseSchema,
+  logoutResponseSchema,
+  magicLinkRequestResponseSchema,
   placeDetailResponseSchema,
   placesResponseSchema,
   problemDetailsSchema,
@@ -91,14 +98,31 @@ function retryAfterSeconds(response: Response) {
   return Math.max(0, Math.ceil((retryAt - Date.now()) / 1_000));
 }
 
-async function request<T>(path: string, schema: z.ZodType<T>, signal?: AbortSignal): Promise<T> {
-  const cancellation = combinedSignal(signal);
+interface RequestOptions {
+  readonly body?: unknown;
+  readonly method?: 'GET' | 'POST';
+  readonly signal?: AbortSignal | undefined;
+}
+
+export async function request<T>(
+  path: string,
+  schema: z.ZodType<T>,
+  options: RequestOptions = {},
+): Promise<T> {
+  const cancellation = combinedSignal(options.signal);
   try {
+    const hasBody = options.body !== undefined;
     const response = await fetch(
       `${normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL)}${path}`,
       {
-        headers: { Accept: 'application/json, application/problem+json' },
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json, application/problem+json',
+          ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+        },
+        method: options.method ?? 'GET',
         signal: cancellation.signal,
+        ...(hasBody ? { body: JSON.stringify(options.body) } : {}),
       },
     );
     const contentType = response.headers.get('content-type')?.split(';')[0]?.trim();
@@ -166,7 +190,7 @@ export function getCategories(signal?: AbortSignal) {
   return request<ApiSuccess<readonly PublicCategory[], CategoriesMeta>>(
     '/public/categories',
     categoriesResponseSchema,
-    signal,
+    { signal },
   );
 }
 
@@ -190,7 +214,7 @@ export function getRecommendations(input: RecommendationInput, signal?: AbortSig
       radiusMeters: NORMAL_RADIUS_METERS,
     })}`,
     recommendationsResponseSchema,
-    signal,
+    { signal },
   );
 }
 
@@ -213,7 +237,7 @@ export function getPlaces(input: PlacesInput, signal?: AbortSignal) {
       sort: input.sort ?? 'NEAREST',
     })}`,
     placesResponseSchema,
-    signal,
+    { signal },
   );
 }
 
@@ -221,6 +245,26 @@ export function getPlaceDetail(slug: string, signal?: AbortSignal) {
   return request<ApiSuccess<PublicPlaceDetail, PlaceDetailMeta>>(
     `/public/places/${encodeURIComponent(slug)}`,
     placeDetailResponseSchema,
-    signal,
+    { signal },
   );
+}
+
+export function requestMagicLink(input: MagicLinkRequestInput, signal?: AbortSignal) {
+  return request<ApiSuccess<MagicLinkRequestResult>>(
+    '/auth/email/request',
+    magicLinkRequestResponseSchema,
+    { body: input, method: 'POST', signal },
+  );
+}
+
+export function getAuthSession(signal?: AbortSignal) {
+  return request<ApiSuccess<AuthSession>>('/auth/session', authSessionResponseSchema, { signal });
+}
+
+export function logout(signal?: AbortSignal) {
+  return request<ApiSuccess<LogoutResult>>('/auth/logout', logoutResponseSchema, {
+    body: {},
+    method: 'POST',
+    signal,
+  });
 }

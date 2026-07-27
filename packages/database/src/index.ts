@@ -10,7 +10,7 @@ export * from './public-api';
 export { seedDatabase } from './seed';
 export * from './spatial';
 export * from './transactions';
-export type { Pool } from 'mysql2/promise';
+export type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 
 export interface DatabaseConnectionConfig {
   readonly uri: string;

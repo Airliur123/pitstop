@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page, test } from '@playwright/test';
 
-const appOrigin = 'http://127.0.0.1:3000';
+const appOrigin = 'http://localhost:3100';
 
 async function openManualLocation(page: Page) {
   await page.getByRole('button', { name: 'Pilih area manual' }).click();

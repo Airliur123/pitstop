@@ -7,7 +7,15 @@ import {
   moderationReviews,
 } from './contributions';
 import { auditLogs, placeChangeHistory } from './governance';
-import { authAccounts, refreshTokens, roles, userRoles, users } from './identity';
+import {
+  authAccounts,
+  authLoginTokens,
+  authSessions,
+  refreshTokens,
+  roles,
+  userRoles,
+  users,
+} from './identity';
 import { geocodingResults, googleFormSubmissions, integrationSources } from './integrations';
 import {
   categories,
@@ -27,6 +35,8 @@ export const usersRelations = relations(users, ({ many }) => ({
   assignedRoles: many(userRoles, { relationName: 'userRoleAssigner' }),
   authAccounts: many(authAccounts),
   refreshTokens: many(refreshTokens),
+  loginTokens: many(authLoginTokens),
+  sessions: many(authSessions),
   contributions: many(contributions),
   moderationReviews: many(moderationReviews),
   confirmations: many(placeConfirmations),
@@ -62,6 +72,12 @@ export const refreshTokensRelations = relations(refreshTokens, ({ one }) => ({
     references: [refreshTokens.id],
     relationName: 'refreshTokenReplacement',
   }),
+}));
+export const authLoginTokensRelations = relations(authLoginTokens, ({ one }) => ({
+  user: one(users, { fields: [authLoginTokens.userId], references: [users.id] }),
+}));
+export const authSessionsRelations = relations(authSessions, ({ one }) => ({
+  user: one(users, { fields: [authSessions.userId], references: [users.id] }),
 }));
 
 export const placesRelations = relations(places, ({ many, one }) => ({

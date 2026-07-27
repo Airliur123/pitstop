@@ -21,7 +21,7 @@ features.
 
 | Group         | Tables                                                                                                                                                |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Identity      | `users`, `roles`, `user_roles`, `auth_accounts`, `refresh_tokens`                                                                                     |
+| Identity      | `users`, `roles`, `user_roles`, `auth_accounts`, `auth_login_tokens`, `auth_sessions`, `refresh_tokens`                                               |
 | Places        | `places`, `categories`, `place_categories`, `menus`, `facilities`, `place_facilities`, `operating_hours`, `operating_hour_exceptions`, `place_photos` |
 | Contributions | `contributions`, `contribution_payloads`, `contribution_photos`, `moderation_reviews`                                                                 |
 | Reports       | `place_confirmations`, `place_reports`, `report_evidence`                                                                                             |
@@ -45,4 +45,5 @@ development/test values, and requires `PITSTOP_ALLOW_DB_RESET=true`.
 Drizzle Studio process.
 
 See [migrations.md](./migrations.md), [seeding.md](./seeding.md), [spatial.md](./spatial.md), and
-[transactions.md](./transactions.md) for operational details.
+[transactions.md](./transactions.md) for operational details. Phase 6 authentication lifecycle
+details are in [docs/authentication](../authentication/README.md).

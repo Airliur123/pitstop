@@ -133,6 +133,48 @@ export const refreshTokens = mysqlTable(
   ],
 );
 
+export const authLoginTokens = mysqlTable(
+  'auth_login_tokens',
+  {
+    id: ulidColumn().primaryKey(),
+    userId: ulidColumn('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+    tokenHash: char('token_hash', { length: 64 }).notNull(),
+    returnTo: varchar('return_to', { length: 255 }).notNull(),
+    expiresAt: timestamp('expires_at', { fsp: 3 }).notNull(),
+    consumedAt: timestamp('consumed_at', { fsp: 3 }),
+    createdAt: createdAtColumn(),
+  },
+  (table) => [
+    uniqueIndex('uq_auth_login_tokens_token_hash').on(table.tokenHash),
+    index('idx_auth_login_tokens_user_consumed').on(table.userId, table.consumedAt),
+    index('idx_auth_login_tokens_expires').on(table.expiresAt),
+    check('chk_auth_login_tokens_expiry', sql`${table.expiresAt} > ${table.createdAt}`),
+  ],
+);
+
+export const authSessions = mysqlTable(
+  'auth_sessions',
+  {
+    id: ulidColumn().primaryKey(),
+    userId: ulidColumn('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+    sessionTokenHash: char('session_token_hash', { length: 64 }).notNull(),
+    expiresAt: timestamp('expires_at', { fsp: 3 }).notNull(),
+    revokedAt: timestamp('revoked_at', { fsp: 3 }),
+    createdAt: createdAtColumn(),
+    lastSeenAt: timestamp('last_seen_at', { fsp: 3 }),
+  },
+  (table) => [
+    uniqueIndex('uq_auth_sessions_token_hash').on(table.sessionTokenHash),
+    index('idx_auth_sessions_user_revoked').on(table.userId, table.revokedAt),
+    index('idx_auth_sessions_expires').on(table.expiresAt),
+    check('chk_auth_sessions_expiry', sql`${table.expiresAt} > ${table.createdAt}`),
+  ],
+);
+
 export const publicUserColumns = {
   id: users.id,
   email: users.email,

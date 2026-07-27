@@ -9,8 +9,14 @@ const environment = parseWebEnvironment(loadWorkspaceEnvironment(workspaceRoot))
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ['127.0.0.1'],
+  distDir: process.env.PITSTOP_E2E === 'true' ? '.next-e2e' : '.next',
   reactStrictMode: true,
-  transpilePackages: ['@pitstop/config', '@pitstop/contracts', '@pitstop/ui'],
+  transpilePackages: [
+    '@pitstop/config',
+    '@pitstop/contracts',
+    '@pitstop/ui',
+    '@pitstop/validation',
+  ],
   env: {
     NEXT_PUBLIC_API_BASE_URL: environment.NEXT_PUBLIC_API_BASE_URL,
     NEXT_PUBLIC_ENABLE_UI_CATALOG: environment.NEXT_PUBLIC_ENABLE_UI_CATALOG ? 'true' : 'false',

@@ -140,8 +140,7 @@ select {
   font-family: var(--pitstop-font-sans);
 }
 
-.pitstop-map-summary h3,
-.pitstop-map-summary p {
+.pitstop-map-summary h3 {
   margin: 0;
 }
 
@@ -151,7 +150,7 @@ select {
 }
 
 .pitstop-map-summary p {
-  color: var(--pitstop-color-text-secondary);
+  color: var(--pitstop-color-text-primary);
   font-size: var(--pitstop-type-body-small-size);
   line-height: var(--pitstop-type-body-small-line);
 }
