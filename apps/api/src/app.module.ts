@@ -14,6 +14,8 @@ import { ApiExceptionFilter } from './http/api-exception.filter';
 import { RequestIdInterceptor } from './http/request-id.interceptor';
 import { AuthModule } from './modules/auth/auth.module';
 import { AUTH_LOG_REDACTION_PATHS } from './modules/auth/auth-security';
+import { CONTRIBUTION_LOG_REDACTION_PATHS } from './modules/contributions/contribution-security';
+import { ContributionsModule } from './modules/contributions/contributions.module';
 import { HealthController } from './modules/health/health.controller';
 import { HealthService } from './modules/health/health.service';
 import { PublicCategoriesModule } from './modules/public-categories/public-categories.module';
@@ -27,6 +29,7 @@ import { RecommendationsModule } from './modules/recommendations/recommendations
     RedisModule,
     CacheModule,
     AuthModule,
+    ContributionsModule,
     PublicCategoriesModule,
     PublicPlacesModule,
     RecommendationsModule,
@@ -53,7 +56,7 @@ import { RecommendationsModule } from './modules/recommendations/recommendations
             },
           },
           redact: {
-            paths: [...AUTH_LOG_REDACTION_PATHS],
+            paths: [...AUTH_LOG_REDACTION_PATHS, ...CONTRIBUTION_LOG_REDACTION_PATHS],
             censor: '[REDACTED]',
           },
         },

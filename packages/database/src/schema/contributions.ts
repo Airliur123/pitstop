@@ -49,6 +49,8 @@ export const contributions = mysqlTable(
   (table) => [
     index('idx_contributions_status_created').on(table.contributionStatus, table.createdAt),
     index('idx_contributions_submitter').on(table.submittedBy, table.createdAt),
+    index('idx_contributions_submitter_id').on(table.submittedBy, table.id),
+    index('idx_contributions_submitted_at').on(table.submittedAt),
     index('idx_contributions_target').on(table.targetPlaceId),
     foreignKey({
       name: 'fk_contributions_revision_of',

@@ -1,12 +1,11 @@
-import { ProtectedPlaceholder } from '../../components/protected-placeholder';
+import { Suspense } from 'react';
+
+import { ContributionFlow } from '../../components/contribution-flow';
 
 export default function ContributePage() {
   return (
-    <ProtectedPlaceholder
-      description="Alur menambah tempat akan dibangun pada fase kontribusi berikutnya."
-      navigationCurrent="add"
-      returnTo="/contribute"
-      title="Tambah tempat"
-    />
+    <Suspense fallback={null}>
+      <ContributionFlow />
+    </Suspense>
   );
 }

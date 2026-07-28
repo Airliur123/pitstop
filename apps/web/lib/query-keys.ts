@@ -5,6 +5,9 @@ import { type ActiveLocationQueryKey, NORMAL_RADIUS_METERS } from './location';
 export const queryKeys = {
   authSession: () => ['auth', 'session'] as const,
   categories: () => ['public', 'categories'] as const,
+  contribution: (userId: string, contributionId: string) =>
+    ['private', 'contributions', userId, contributionId] as const,
+  contributionsPrivate: () => ['private', 'contributions'] as const,
   detail: (slug: string) => ['public', 'places', 'detail', slug] as const,
   places: (
     locationKey: ActiveLocationQueryKey,

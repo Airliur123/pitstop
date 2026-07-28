@@ -3,6 +3,7 @@ import {
   authRoleValues,
   type AuthSession,
   type CategoriesMeta,
+  type ContributionDetail,
   type LogoutResult,
   type MagicLinkRequestResult,
   type MagicLinkVerificationResult,
@@ -21,6 +22,7 @@ import {
   type RecommendationResult,
   type RequestId,
 } from '@pitstop/contracts';
+import { contributionDraftSchema, contributionStatusSchema } from '@pitstop/validation';
 import { z } from 'zod';
 
 const requestId = z
@@ -297,3 +299,18 @@ export const problemDetailsSchema = z.object({
     .array(z.object({ field: z.string().min(1), message: z.string().min(1) }))
     .optional(),
 });
+
+const contributionDetail = z.object({
+  createdAt: dateTime,
+  id: z.string().length(26),
+  payload: contributionDraftSchema,
+  status: contributionStatusSchema,
+  submittedAt: dateTime.nullable(),
+  updatedAt: dateTime,
+  version: z.number().int().positive(),
+}) satisfies z.ZodType<ContributionDetail>;
+
+export const contributionResponseSchema = successEnvelope(
+  contributionDetail,
+  responseMeta,
+) satisfies z.ZodType<ApiSuccess<ContributionDetail>>;

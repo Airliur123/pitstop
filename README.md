@@ -1,8 +1,8 @@
 # PitStop Mobile PWA & Admin MVP
 
 PitStop is a mobile-first PWA for helping Indonesian ride-hailing drivers find practical stops.
-The repository has completed the engineering foundation through Phase 5 and now implements the
-Phase 6 guest-first passwordless authentication slice.
+The repository has completed the engineering foundation through Phase 6 and now implements the
+Phase 7 authenticated contribution draft-and-submit slice.
 
 ## Current status
 
@@ -19,15 +19,17 @@ Phase 6 guest-first passwordless authentication slice.
 - **Phase 5 - Location, radius, map, and directions:** browser/manual location, fixed-radius
   behavior, synchronized list/map, and safe Google Maps directions.
 - **Phase 6 - Guest-first authentication:** optional email magic links, HttpOnly revocable sessions,
-  USER/ADMIN authorization foundations, Mailpit delivery, and protected next-phase placeholders.
+  USER/ADMIN authorization foundations, Mailpit delivery, and protected routes.
+- **Phase 7 - Contribution flow:** owned resumable drafts, a three-step mobile wizard, canonical
+  review/detail, idempotent `DRAFT -> PENDING` submission, and private API/database enforcement.
 
-Contribution submission, activity data, profile management, and moderation remain deferred to their
-own phases.
+Activity data, profile management, revision workflows, and moderation remain deferred to their own
+phases.
 
 ### Milestones
 
-The repository contains the verified milestone tags through `phase-5-complete`. Phase 6 work is
-present on the current branch and is not tagged by this implementation.
+The repository contains the verified milestone tags through `phase-5-complete`. Phase 6 and Phase 7
+work are present on the current branch and are not tagged by this implementation.
 
 ## Implemented features
 
@@ -39,12 +41,14 @@ present on the current branch and is not tagged by this implementation.
 - MySQL Spatial and the Drizzle data layer, plus Redis-backed public caching and rate limiting.
 - Optional passwordless email sign-in, revocable sessions, safe return routing, and auth-specific
   fail-closed rate limiting.
+- Authenticated three-step contribution drafts with category-specific pricing, explicit facility
+  states, structured opening hours, server review, idempotent submission, and private detail.
 - Shared accessible UI components used by the web and admin application foundations.
 - Unit and component tests, MySQL/API integration tests, browser E2E tests, and axe accessibility
   checks.
 
-Contribution and activity business data, profile editing, OAuth/password flows, and admin moderation
-are not active features on this branch.
+Activity data, profile editing, OAuth/password flows, revision requests, and admin moderation are
+not active features on this branch.
 
 ## Prerequisites
 
@@ -105,7 +109,7 @@ pnpm --filter @pitstop/worker dev
 | `pnpm typecheck`            | Run strict TypeScript checks                           |
 | `pnpm test`                 | Run workspace unit and component test tasks            |
 | `pnpm db:test`              | Run MySQL Spatial and database integration tests       |
-| `pnpm test:api:integration` | Run public and auth API integration with containers    |
+| `pnpm test:api:integration` | Run public, auth, and contribution API integration     |
 | `pnpm test:integration`     | Alias for the API integration suite                    |
 | `pnpm test:e2e`             | Run Playwright browser E2E and axe accessibility tests |
 | `pnpm format`               | Apply Prettier formatting                              |
@@ -118,11 +122,10 @@ pnpm --filter @pitstop/worker dev
 
 ## Repository map
 
-- `apps/web` - guest Home/search/detail plus optional login, callback, session provider, and
-  protected placeholders
+- `apps/web` - guest Home/search/detail, optional login/session, and authenticated contribution flow
 - `apps/admin` - separate administration shell and shared UI catalog; moderation is not implemented
-- `apps/api` - NestJS/Fastify public resources and passwordless authentication with Redis
-  cache/rate limiting
+- `apps/api` - NestJS/Fastify public resources, passwordless authentication, and contribution API
+  with Redis cache/rate limiting
 - `apps/worker` - BullMQ/Redis worker bootstrap and lifecycle foundation
 - `packages/database` - Drizzle schema, migrations, seed, MySQL Spatial queries, and integration tests
 - `packages/ui` - shared semantic tokens, accessible components, and web/admin layout primitives
@@ -130,8 +133,8 @@ pnpm --filter @pitstop/worker dev
 - `packages/config` and `packages/testing` - environment validation and shared Vitest, Playwright,
   Testcontainers, and axe tooling
 - `infrastructure/*` - local infrastructure notes and assets
-- `docs/*` - ADRs plus database, API, design-system, guest, engineering, security, and testing
-  documentation
+- `docs/*` - ADRs plus database, API, authentication, contribution, design-system, guest,
+  engineering, security, and testing documentation
 
 ## Troubleshooting
 
@@ -155,6 +158,7 @@ there is no local v1.1 PDF on this branch.
 
 The visual source of truth is
 [PitStop Design v1.1 - Flow Clarification Update](https://www.figma.com/design/ULbSs8WJIfXZxqo0g5QUPA/PitStop-Mobile-PWA---Admin-MVP).
-The connected file still reports **Ready for Phase 5** and does not contain the named Phase 6 auth
-frames. Phase 6 therefore follows the accepted brief and existing design-system foundations; the
-design-file status is an explicit follow-up rather than silently assumed complete.
+The connected file contains only Cover and Design System Foundations; it has no Phase 6
+authentication or Phase 7 Mobile Contribution Flow frames. Those flows therefore follow the
+accepted phase briefs and existing design-system foundations. Missing product frames remain an
+explicit design follow-up rather than being silently treated as complete.

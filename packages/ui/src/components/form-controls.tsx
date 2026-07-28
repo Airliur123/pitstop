@@ -100,10 +100,10 @@ export function FormField({
     'aria-invalid': boolean | undefined;
     id: string;
   }) => ReactNode;
-  className?: string;
-  description?: string;
-  error?: string;
-  id?: string;
+  className?: string | undefined;
+  description?: string | undefined;
+  error?: string | undefined;
+  id?: string | undefined;
   label: string;
   required?: boolean;
 }>) {

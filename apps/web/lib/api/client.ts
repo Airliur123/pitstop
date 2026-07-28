@@ -2,6 +2,7 @@ import type {
   ApiSuccess,
   AuthSession,
   CategoriesMeta,
+  ContributionDetail,
   LogoutResult,
   MagicLinkRequestResult,
   PlaceDetailMeta,
@@ -22,6 +23,7 @@ import { type GuestBudgetPreset, isValidBudget } from '../preferences';
 import {
   authSessionResponseSchema,
   categoriesResponseSchema,
+  contributionResponseSchema,
   logoutResponseSchema,
   magicLinkRequestResponseSchema,
   placeDetailResponseSchema,
@@ -39,6 +41,7 @@ export class ApiProblem extends Error {
     readonly code: string,
     readonly requestId: string | null,
     readonly retryAfterSeconds: number | null = null,
+    readonly validationErrors: readonly { readonly field: string; readonly message: string }[] = [],
   ) {
     super(message);
     this.name = 'ApiProblem';
@@ -100,7 +103,8 @@ function retryAfterSeconds(response: Response) {
 
 interface RequestOptions {
   readonly body?: unknown;
-  readonly method?: 'GET' | 'POST';
+  readonly idempotencyKey?: string;
+  readonly method?: 'GET' | 'PATCH' | 'POST';
   readonly signal?: AbortSignal | undefined;
 }
 
@@ -119,6 +123,7 @@ export async function request<T>(
         headers: {
           Accept: 'application/json, application/problem+json',
           ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+          ...(options.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : {}),
         },
         method: options.method ?? 'GET',
         signal: cancellation.signal,
@@ -161,6 +166,7 @@ export async function request<T>(
         problem.data.code,
         problem.data.requestId,
         retryAfterSeconds(response),
+        problem.data.validationErrors,
       );
     }
     const parsed = schema.safeParse(payload);
@@ -267,4 +273,58 @@ export function logout(signal?: AbortSignal) {
     method: 'POST',
     signal,
   });
+}
+
+export function createContribution(
+  input: Readonly<{ payload?: ContributionDetail['payload'] | undefined }>,
+  idempotencyKey: string,
+  signal?: AbortSignal,
+) {
+  return request<ApiSuccess<ContributionDetail>>('/contributions', contributionResponseSchema, {
+    body: input,
+    idempotencyKey,
+    method: 'POST',
+    signal,
+  });
+}
+
+export function getContribution(id: string, signal?: AbortSignal) {
+  return request<ApiSuccess<ContributionDetail>>(
+    `/contributions/${encodeURIComponent(id)}`,
+    contributionResponseSchema,
+    { signal },
+  );
+}
+
+export function updateContribution(
+  id: string,
+  input: Readonly<{
+    expectedVersion: number;
+    payload: ContributionDetail['payload'];
+  }>,
+  signal?: AbortSignal,
+) {
+  return request<ApiSuccess<ContributionDetail>>(
+    `/contributions/${encodeURIComponent(id)}`,
+    contributionResponseSchema,
+    { body: input, method: 'PATCH', signal },
+  );
+}
+
+export function submitContribution(
+  id: string,
+  input: Readonly<{ expectedVersion: number }>,
+  idempotencyKey: string,
+  signal?: AbortSignal,
+) {
+  return request<ApiSuccess<ContributionDetail>>(
+    `/contributions/${encodeURIComponent(id)}/submit`,
+    contributionResponseSchema,
+    {
+      body: input,
+      idempotencyKey,
+      method: 'POST',
+      signal,
+    },
+  );
 }

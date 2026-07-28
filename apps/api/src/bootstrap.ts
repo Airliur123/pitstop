@@ -42,13 +42,16 @@ export async function createApiApplication(): Promise<NestFastifyApplication> {
   );
   await app.register(cors, {
     credentials: true,
+    methods: ['GET', 'HEAD', 'POST', 'PATCH', 'OPTIONS'],
     origin: parseCorsOrigins(environment.CORS_ALLOWED_ORIGINS),
   });
   await app.register(helmet, { contentSecurityPolicy: false });
 
   const swaggerConfiguration = new DocumentBuilder()
     .setTitle('PitStop API')
-    .setDescription('PitStop guest-first public and passwordless authentication REST API')
+    .setDescription(
+      'PitStop guest-first public, passwordless authentication, and owned contribution REST API',
+    )
     .setVersion('1.0.0')
     .build();
   const openApiDocument = SwaggerModule.createDocument(app, swaggerConfiguration);

@@ -158,6 +158,16 @@ export const apiEnvironmentSchema = z
       .max(100_000)
       .optional()
       .default(1_000),
+    CONTRIBUTION_RATE_LIMIT_WINDOW_SECONDS: positiveIntegerEnvironmentSchema
+      .min(10)
+      .max(3_600)
+      .optional()
+      .default(60),
+    CONTRIBUTION_RATE_LIMIT_MAX: positiveIntegerEnvironmentSchema
+      .min(1)
+      .max(1_000)
+      .optional()
+      .default(30),
     AUTH_TOKEN_SECRET: authenticationSecretSchema.optional(),
     AUTH_SESSION_SECRET: authenticationSecretSchema.optional(),
     AUTH_COOKIE_SECURE: booleanStringSchema.optional().default(false),
