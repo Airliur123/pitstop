@@ -2,8 +2,8 @@
 
 Phase 6 adds optional authentication without changing PitStop's guest-first behavior. Home, public
 search, recommendations, place detail, location, map, and directions remain available without an
-account. `/activity` and `/contribute` require a session but intentionally render only
-next-phase placeholders.
+account. `/activity` requires a session and remains a next-phase placeholder. `/contribute` uses the
+same Phase 6 session boundary for the Phase 7 contribution flow.
 
 ## Architecture and lifecycle
 
@@ -33,13 +33,13 @@ bounded ranges.
 
 `pitstop_session` is `HttpOnly`, `Path=/`, and `SameSite=Lax`. Production configuration is rejected
 unless `AUTH_COOKIE_SECURE=true`; local HTTP development leaves `Secure` off. Session-bearing
-mutations use an Origin/Referer allowlist guard in addition to SameSite. At Phase 6, logout is the
-only session-bearing mutation. The reusable `SessionAuthGuard`, `RequireRoles`, and `RoleGuard`
-provide the boundary for later authenticated endpoints without implementing those endpoints early.
+mutations use an Origin/Referer allowlist guard in addition to SameSite. Logout and Phase 7
+contribution writes share this boundary. The reusable `SessionAuthGuard`, `RequireRoles`, and
+`RoleGuard` provide authorization foundations for later authenticated endpoints.
 
-`returnTo` accepts only `/`, `/activity`, and `/contribute`. Absolute URLs, protocol-relative URLs,
-encoded external destinations, and arbitrary internal paths fall back to `/` in the web flow or
-fail API validation.
+`returnTo` accepts `/`, `/activity`, `/contribute`, and exact Phase 7 contribution detail/success
+paths with a ULID. Absolute URLs, protocol-relative URLs, encoded external destinations, and
+arbitrary internal paths fall back to `/` in the web flow or fail API validation.
 
 ## Rate limits
 
@@ -114,5 +114,6 @@ accepted passwordless Phase 6 definition. The PDF was not edited or silently rei
 Phase 6 brief is treated as the explicit authentication decision; this mismatch remains a product
 documentation follow-up.
 
-Password reset, OAuth, contribution submission, activity data, profile editing, admin moderation,
-refresh-token rotation, and Phase 7 business behavior are intentionally deferred.
+Password reset, OAuth, activity data, profile editing, admin moderation, revision workflows, and
+refresh-token rotation are intentionally deferred. Phase 7 contribution behavior is documented in
+[docs/contributions](../contributions/README.md).

@@ -1,8 +1,8 @@
-# PitStop Phase 1 Database
+# PitStop database
 
-Phase 1 implements the relational and spatial foundation for PitStop on MySQL 8.4, InnoDB,
-UTF8MB4, Drizzle ORM, and `mysql2`. It does not expose business endpoints or implement Phase 2+
-features.
+Phase 1 established the relational and spatial foundation on MySQL 8.4, InnoDB, UTF8MB4, Drizzle
+ORM, and `mysql2`. Phase 7 uses the existing contribution aggregate and adds ownership/activity
+indexes; the API remains in the modular application layer.
 
 ## Design invariants
 
@@ -46,4 +46,5 @@ Drizzle Studio process.
 
 See [migrations.md](./migrations.md), [seeding.md](./seeding.md), [spatial.md](./spatial.md), and
 [transactions.md](./transactions.md) for operational details. Phase 6 authentication lifecycle
-details are in [docs/authentication](../authentication/README.md).
+details are in [docs/authentication](../authentication/README.md). Phase 7 contribution persistence
+is documented in [docs/contributions](../contributions/README.md#persistence-and-migration).

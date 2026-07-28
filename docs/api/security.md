@@ -17,5 +17,7 @@
 - Cache keys hash normalized location input. Application responses do not retain location history.
 - Error responses omit stacks, SQL, and database details.
 
-Public GET access is Guest First, not an authorization bypass for mutation. Phase 3 exposes no
-write, auth, admin, contribution, report, upload, or integration routes.
+Public GET access is Guest First, not an authorization bypass for mutation. Phase 7 contribution
+routes use session ownership filters, Origin/Referer CSRF checks, optimistic versions, idempotency,
+strict payload validation, private no-store responses, contributor-data log redaction, and
+fail-closed Redis mutation limits. See [contributions.md](./contributions.md).

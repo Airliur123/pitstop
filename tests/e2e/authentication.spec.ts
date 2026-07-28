@@ -32,6 +32,20 @@ test.beforeAll(() => {
 test.afterAll(async () => {
   if (databasePool) {
     for (const email of createdEmails) {
+      await databasePool.execute(
+        `DELETE FROM idempotency_keys
+         WHERE scope LIKE CONCAT('%', (
+           SELECT id FROM users WHERE normalized_email = ? LIMIT 1
+         ), '%')`,
+        [email.toLowerCase()],
+      );
+      await databasePool.execute(
+        `DELETE FROM contributions
+         WHERE submitted_by = (
+           SELECT id FROM users WHERE normalized_email = ? LIMIT 1
+         )`,
+        [email.toLowerCase()],
+      );
       await databasePool.execute('DELETE FROM users WHERE normalized_email = ?', [
         email.toLowerCase(),
       ]);
@@ -120,10 +134,11 @@ test('@auth-core expired links and external return destinations fail safely', as
   await expect(page).toHaveURL(/\/login\?returnTo=%2Fcontribute$/);
   await requestLink(page, contributeEmail);
   await page.goto(`/auth/verify?token=${await magicToken(request, contributeEmail)}`);
-  await expect(page).toHaveURL('/contribute');
-  await expect(page.getByRole('heading', { name: 'Tambah tempat' })).toBeVisible();
+  await expect(page).toHaveURL(/\/contribute\?id=[A-Z0-9]{26}&step=1$/);
+  await expect(page.getByRole('heading', { name: 'Ceritakan tempatnya' })).toBeVisible();
+  await page.goto('/activity');
   await page.getByRole('button', { name: 'Keluar' }).click();
-  await expect(page).toHaveURL(/\/login\?returnTo=%2Fcontribute$/);
+  await expect(page).toHaveURL(/\/login\?returnTo=%2Factivity$/);
 
   const expiredEmail = `e2e-expired-${Date.now()}@example.test`;
   await page.goto('/login?returnTo=/contribute');

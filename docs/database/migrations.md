@@ -21,6 +21,10 @@ The Phase 1 baseline includes controlled SQL additions for:
 - matching `CURRENT_TIMESTAMP(3)` precision for MySQL 8.4 update clauses;
 - shortened FK naming where Drizzle's generated name exceeds MySQL's 64-character limit.
 
+Phase 7 migration `0006_perpetual_lorna_dane.sql` is generated from the modular Drizzle schema and
+adds only the contributor ownership and submitted-activity indexes. Its operational and rollback
+notes are in [the contribution guide](../contributions/README.md#persistence-and-migration).
+
 MySQL DDL auto-commits, so a failed initial migration may leave partial tables. The guarded local
 `db:reset` exists only for development/test recovery. Applied shared-environment migrations must
 never be edited; corrections require a forward migration.

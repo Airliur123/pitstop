@@ -197,3 +197,97 @@ export const recommendationsResponseSchema = {
     },
   },
 };
+
+const contributionPayload = {
+  type: 'object' as const,
+  additionalProperties: false,
+  properties: {
+    placeName: { type: 'string' as const, maxLength: 180 },
+    category: {
+      type: 'string' as const,
+      enum: ['MAKAN_MURAH', 'NGOPI', 'TOILET', 'MUSALA', 'ISTIRAHAT'],
+    },
+    address: { type: 'string' as const, maxLength: 500 },
+    landmark: { type: 'string' as const, maxLength: 255 },
+    mapsUrl: { type: 'string' as const, format: 'uri', maxLength: 1_000 },
+    mainMenu: {
+      type: 'object' as const,
+      additionalProperties: false,
+      required: ['name', 'priceAmount'],
+      properties: {
+        name: { type: 'string' as const, maxLength: 180 },
+        priceAmount: { type: 'integer' as const, minimum: 1, maximum: 10_000_000 },
+      },
+    },
+    facilities: {
+      type: 'array' as const,
+      maxItems: 7,
+      items: {
+        type: 'object' as const,
+        additionalProperties: false,
+        required: ['code', 'status'],
+        properties: {
+          code: {
+            type: 'string' as const,
+            enum: ['PARKING', 'TOILET', 'MUSALA', 'POWER_OUTLET', 'SEATING', 'SHADE', 'WIFI'],
+          },
+          status: {
+            type: 'string' as const,
+            enum: ['AVAILABLE', 'NOT_AVAILABLE', 'UNKNOWN'],
+          },
+        },
+      },
+    },
+    operatingHours: {
+      type: 'array' as const,
+      maxItems: 7,
+      items: {
+        type: 'object' as const,
+        additionalProperties: false,
+        required: ['dayOfWeek', 'isClosed', 'is24Hours', 'opensAt', 'closesAt'],
+        properties: {
+          dayOfWeek: { type: 'integer' as const, minimum: 0, maximum: 6 },
+          isClosed: { type: 'boolean' as const },
+          is24Hours: { type: 'boolean' as const },
+          opensAt: { type: 'string' as const, nullable: true, pattern: '^\\d{2}:\\d{2}$' },
+          closesAt: { type: 'string' as const, nullable: true, pattern: '^\\d{2}:\\d{2}$' },
+        },
+      },
+    },
+    notes: { type: 'string' as const, maxLength: 1_000 },
+  },
+};
+
+export const contributionResponseSchema = {
+  type: 'object' as const,
+  required: ['success', 'data', 'requestId', 'meta'],
+  properties: {
+    success: { type: 'boolean' as const, enum: [true] },
+    data: {
+      type: 'object' as const,
+      required: ['id', 'status', 'payload', 'version', 'createdAt', 'updatedAt', 'submittedAt'],
+      properties: {
+        id: { type: 'string' as const, minLength: 26, maxLength: 26 },
+        status: {
+          type: 'string' as const,
+          enum: [
+            'DRAFT',
+            'PENDING',
+            'IN_REVIEW',
+            'NEEDS_REVISION',
+            'APPROVED',
+            'REJECTED',
+            'MERGED',
+          ],
+        },
+        payload: contributionPayload,
+        version: { type: 'integer' as const, minimum: 1 },
+        createdAt: { type: 'string' as const, format: 'date-time' },
+        updatedAt: { type: 'string' as const, format: 'date-time' },
+        submittedAt: { type: 'string' as const, format: 'date-time', nullable: true },
+      },
+    },
+    requestId: { type: 'string' as const },
+    meta: requestMetadata,
+  },
+};

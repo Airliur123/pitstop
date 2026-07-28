@@ -109,6 +109,8 @@ describe.sequential('public and Phase 6 authentication API', () => {
       LOG_LEVEL: 'silent',
       PUBLIC_RATE_LIMIT_MAX: '20',
       RECOMMENDATION_RATE_LIMIT_MAX: '5',
+      CONTRIBUTION_RATE_LIMIT_MAX: '100',
+      CONTRIBUTION_RATE_LIMIT_WINDOW_SECONDS: '60',
       CACHE_REDIS_TIMEOUT_MS: '500',
       PUBLIC_CURSOR_SIGNING_SECRET: 'test-public-cursor-signing-secret-0123456789',
     });
@@ -426,6 +428,9 @@ describe.sequential('public and Phase 6 authentication API', () => {
         '/api/v1/auth/email/verify',
         '/api/v1/auth/session',
         '/api/v1/auth/logout',
+        '/api/v1/contributions',
+        '/api/v1/contributions/{id}',
+        '/api/v1/contributions/{id}/submit',
       ]),
     );
   });
@@ -447,6 +452,172 @@ describe.sequential('public and Phase 6 authentication API', () => {
     const ttl = await redisService.run((client) => client.ttl(key));
     expect(ttl).toBeGreaterThan(250);
     expect(ttl).toBeLessThanOrEqual(300);
+  });
+
+  it('persists an owned draft and idempotently submits it to PENDING', async () => {
+    const redisService = getApp().get(RedisService);
+    await redisService.run((client) => client.flushdb());
+    const owner = await authenticatedAgent(`contribution-owner-${createUlid().toLowerCase()}`);
+    const stranger = await authenticatedAgent(`contribution-other-${createUlid().toLowerCase()}`);
+    const server = getApp().getHttpServer();
+
+    const unauthenticated = await request(server)
+      .get(`/api/v1/contributions/${createUlid()}`)
+      .expect(401);
+    expect(unauthenticated.body.code).toBe('AUTH_REQUIRED');
+    expect(unauthenticated.headers['cache-control']).toContain('no-store');
+
+    await owner
+      .post('/api/v1/contributions')
+      .set('Idempotency-Key', 'phase7-create-csrf')
+      .send({})
+      .expect(403);
+
+    const created = await owner
+      .post('/api/v1/contributions')
+      .set('Origin', 'http://localhost:3000')
+      .set('Idempotency-Key', 'phase7-create-owner')
+      .send({})
+      .expect(201);
+    expect(created.body.data).toMatchObject({
+      status: 'DRAFT',
+      submittedAt: null,
+      version: 1,
+    });
+    expect(created.headers['cache-control']).toContain('no-store');
+    const contributionId = String(created.body.data.id);
+
+    const preflight = await request(server)
+      .options(`/api/v1/contributions/${contributionId}`)
+      .set('Access-Control-Request-Headers', 'content-type')
+      .set('Access-Control-Request-Method', 'PATCH')
+      .set('Origin', 'http://localhost:3000')
+      .expect(204);
+    expect(preflight.headers['access-control-allow-methods']).toContain('PATCH');
+
+    const replay = await owner
+      .post('/api/v1/contributions')
+      .set('Origin', 'http://localhost:3000')
+      .set('Idempotency-Key', 'phase7-create-owner')
+      .send({})
+      .expect(201);
+    expect(replay.body.data.id).toBe(contributionId);
+
+    const reused = await owner
+      .post('/api/v1/contributions')
+      .set('Origin', 'http://localhost:3000')
+      .set('Idempotency-Key', 'phase7-create-owner')
+      .send({ payload: { placeName: 'Different request' } })
+      .expect(409);
+    expect(reused.body.code).toBe('IDEMPOTENCY_KEY_REUSED');
+
+    const hidden = await stranger.get(`/api/v1/contributions/${contributionId}`).expect(404);
+    expect(hidden.body).toMatchObject({
+      code: 'CONTRIBUTION_NOT_FOUND',
+      status: 404,
+    });
+    const hiddenMutation = await stranger
+      .patch(`/api/v1/contributions/${contributionId}`)
+      .set('Origin', 'http://localhost:3000')
+      .send({ expectedVersion: 1, payload: { placeName: 'Unauthorized edit' } })
+      .expect(404);
+    expect(hiddenMutation.body.code).toBe('CONTRIBUTION_NOT_FOUND');
+
+    const invalid = await owner
+      .patch(`/api/v1/contributions/${contributionId}`)
+      .set('Origin', 'http://localhost:3000')
+      .send({
+        expectedVersion: 1,
+        payload: { placeName: 'Draft', unexpected: true },
+      })
+      .expect(400);
+    expect(invalid.body.code).toBe('VALIDATION_ERROR');
+
+    const partial = await owner
+      .patch(`/api/v1/contributions/${contributionId}`)
+      .set('Origin', 'http://localhost:3000')
+      .send({ expectedVersion: 1, payload: { placeName: 'Draft parsial' } })
+      .expect(200);
+    expect(partial.body.data).toMatchObject({
+      payload: { placeName: 'Draft parsial' },
+      status: 'DRAFT',
+      version: 2,
+    });
+
+    const incomplete = await owner
+      .post(`/api/v1/contributions/${contributionId}/submit`)
+      .set('Origin', 'http://localhost:3000')
+      .set('Idempotency-Key', 'phase7-incomplete')
+      .send({ expectedVersion: 2 })
+      .expect(400);
+    expect(incomplete.body.code).toBe('CONTRIBUTION_INCOMPLETE');
+    expect(incomplete.body.validationErrors).toEqual(expect.any(Array));
+
+    const completePayload = {
+      address: 'Jl. Uji Integrasi No. 7, Jakarta',
+      category: 'MAKAN_MURAH',
+      facilities: [
+        { code: 'PARKING', status: 'AVAILABLE' },
+        { code: 'TOILET', status: 'NOT_AVAILABLE' },
+      ],
+      mainMenu: { name: 'Nasi telur', priceAmount: 12_000 },
+      mapsUrl: 'https://www.google.com/maps?q=-6.2,106.8',
+      notes: 'Masuk dari sisi timur.',
+      operatingHours: [
+        {
+          closesAt: '02:00',
+          dayOfWeek: 0,
+          is24Hours: false,
+          isClosed: false,
+          opensAt: '18:00',
+        },
+      ],
+      placeName: 'Warung Integrasi Phase 7',
+    };
+    const completed = await owner
+      .patch(`/api/v1/contributions/${contributionId}`)
+      .set('Origin', 'http://localhost:3000')
+      .send({ expectedVersion: 2, payload: completePayload })
+      .expect(200);
+    expect(completed.body.data.version).toBe(3);
+    expect(completed.body.data.payload.facilities).toHaveLength(7);
+    expect(completed.body.data.payload.facilities).toContainEqual({
+      code: 'WIFI',
+      status: 'UNKNOWN',
+    });
+
+    const detail = await owner.get(`/api/v1/contributions/${contributionId}`).expect(200);
+    expect(detail.headers['cache-control']).toContain('no-store');
+    expect(detail.body.data.payload).toMatchObject({
+      mainMenu: { name: 'Nasi telur', priceAmount: 12_000 },
+      placeName: 'Warung Integrasi Phase 7',
+    });
+
+    const submitRequest = (key: string) =>
+      owner
+        .post(`/api/v1/contributions/${contributionId}/submit`)
+        .set('Origin', 'http://localhost:3000')
+        .set('Idempotency-Key', key)
+        .send({ expectedVersion: 3 });
+    const [firstSubmit, concurrentSubmit] = await Promise.all([
+      submitRequest('phase7-submit-owner'),
+      submitRequest('phase7-submit-concurrent'),
+    ]);
+    expect([firstSubmit.status, concurrentSubmit.status]).toEqual([200, 200]);
+    expect(firstSubmit.body.data).toMatchObject({ status: 'PENDING', version: 4 });
+    expect(concurrentSubmit.body.data).toMatchObject({ status: 'PENDING', version: 4 });
+    expect(firstSubmit.body.data.submittedAt).toEqual(expect.any(String));
+
+    const exactReplay = await submitRequest('phase7-submit-owner');
+    expect(exactReplay.status).toBe(200);
+    expect(exactReplay.body.data).toEqual(firstSubmit.body.data);
+
+    const immutable = await owner
+      .patch(`/api/v1/contributions/${contributionId}`)
+      .set('Origin', 'http://localhost:3000')
+      .send({ expectedVersion: 4, payload: completePayload })
+      .expect(409);
+    expect(immutable.body.code).toBe('CONTRIBUTION_INVALID_STATE');
   });
 
   it('returns 429 with Retry-After and Problem Details', async () => {
@@ -483,6 +654,18 @@ describe.sequential('public and Phase 6 authentication API', () => {
       .expect(503);
     expect(authResponse.body.code).toBe('AUTH_RATE_LIMIT_UNAVAILABLE');
   });
+
+  async function authenticatedAgent(emailPrefix: string) {
+    const email = `${emailPrefix}@example.test`;
+    const agent = request.agent(getApp().getHttpServer());
+    await agent
+      .post('/api/v1/auth/email/request')
+      .send({ email, returnTo: '/contribute' })
+      .expect(202);
+    const token = await latestMagicLinkToken(email);
+    await agent.post('/api/v1/auth/email/verify').send({ token }).expect(200);
+    return agent;
+  }
 });
 
 async function latestMagicLinkToken(email: string): Promise<string> {

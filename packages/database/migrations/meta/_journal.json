@@ -43,6 +43,13 @@
       "when": 1785095421966,
       "tag": "0005_unknown_living_mummy",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1785251550073,
+      "tag": "0006_perpetual_lorna_dane",
+      "breakpoints": true
     }
   ]
 }

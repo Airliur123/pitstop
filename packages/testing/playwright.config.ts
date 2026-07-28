@@ -62,28 +62,28 @@ export default defineConfig({
   },
   projects: [
     {
-      grepInvert: /@guest-core|@auth-core/,
+      grepInvert: /@guest-core|@auth-core|@contribution-core/,
       name: 'mobile-320',
       use: { viewport: { height: 568, width: 320 } },
     },
     {
-      grepInvert: /@guest-core|@auth-core/,
+      grepInvert: /@guest-core|@auth-core|@contribution-core/,
       name: 'mobile-360',
       use: { viewport: { height: 800, width: 360 } },
     },
     { name: 'mobile-390', use: { viewport: { height: 844, width: 390 } } },
     {
-      grepInvert: /@guest-core|@auth-core/,
+      grepInvert: /@guest-core|@auth-core|@contribution-core/,
       name: 'mobile-430',
       use: { viewport: { height: 932, width: 430 } },
     },
     {
-      grepInvert: /@guest-core|@auth-core/,
+      grepInvert: /@guest-core|@auth-core|@contribution-core/,
       name: 'tablet-768',
       use: { viewport: { height: 1024, width: 768 } },
     },
     {
-      grepInvert: /@guest-core|@auth-core/,
+      grepInvert: /@guest-core|@auth-core|@contribution-core/,
       name: 'desktop-1280',
       use: { viewport: { height: 800, width: 1280 } },
     },

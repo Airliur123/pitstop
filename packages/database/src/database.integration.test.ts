@@ -131,7 +131,7 @@ describe.sequential('MySQL 8.4 spatial database', () => {
     const [rows] = await getPool().query<CountRow[]>(
       'SELECT COUNT(*) AS count FROM __drizzle_migrations',
     );
-    expect(Number(rows[0]?.count)).toBe(6);
+    expect(Number(rows[0]?.count)).toBe(7);
   });
 
   it('3. creates every required domain table', async () => {
@@ -265,6 +265,85 @@ describe.sequential('MySQL 8.4 spatial database', () => {
         [activeHash, expiredHash, revokedHash],
       ),
     ).toBe(1);
+  });
+
+  it('6e. indexes contributor ownership and submitted activity lookups', async () => {
+    const [indexes] = await getPool().query<StringRow[]>(
+      `SELECT index_name AS value
+       FROM information_schema.statistics
+       WHERE table_schema = DATABASE() AND table_name = 'contributions'`,
+    );
+    expect(indexes.map((row) => row.value)).toEqual(
+      expect.arrayContaining(['idx_contributions_submitter_id', 'idx_contributions_submitted_at']),
+    );
+  });
+
+  it('6f. enforces contribution ownership keys and one atomic DRAFT to PENDING transition', async () => {
+    const ownerId = await insertUser(getPool(), uniqueEmail('contribution-owner'));
+    const strangerId = await insertUser(getPool(), uniqueEmail('contribution-stranger'));
+    const contributionId = createUlid();
+
+    await expect(
+      getPool().execute(
+        `INSERT INTO contributions (id, submitted_by, source, contribution_status)
+         VALUES (?, ?, 'APPLICATION', 'DRAFT')`,
+        [createUlid(), createUlid()],
+      ),
+    ).rejects.toMatchObject({ code: 'ER_NO_REFERENCED_ROW_2' });
+
+    await getPool().execute(
+      `INSERT INTO contributions (id, submitted_by, source, contribution_status)
+       VALUES (?, ?, 'APPLICATION', 'DRAFT')`,
+      [contributionId, ownerId],
+    );
+    await getPool().execute(
+      `INSERT INTO contribution_payloads (contribution_id, schema_version, payload)
+       VALUES (?, 1, JSON_OBJECT('placeName', 'Draft integration'))`,
+      [contributionId],
+    );
+    expect(
+      await scalarCount(
+        getPool(),
+        'SELECT COUNT(*) AS count FROM contributions WHERE id = ? AND submitted_by = ?',
+        [contributionId, ownerId],
+      ),
+    ).toBe(1);
+    expect(
+      await scalarCount(
+        getPool(),
+        'SELECT COUNT(*) AS count FROM contributions WHERE id = ? AND submitted_by = ?',
+        [contributionId, strangerId],
+      ),
+    ).toBe(0);
+
+    const transition = () =>
+      getPool().execute<ResultSetHeader>(
+        `UPDATE contributions
+         SET contribution_status = 'PENDING', submitted_at = CURRENT_TIMESTAMP(3),
+             version = version + 1
+         WHERE id = ? AND submitted_by = ? AND contribution_status = 'DRAFT' AND version = 1`,
+        [contributionId, ownerId],
+      );
+    const transitions = await Promise.all([transition(), transition()]);
+    expect(transitions.map(([result]) => result.affectedRows).sort()).toEqual([0, 1]);
+    expect(
+      await scalarCount(
+        getPool(),
+        `SELECT COUNT(*) AS count FROM contributions
+         WHERE id = ? AND contribution_status = 'PENDING'
+           AND submitted_at IS NOT NULL AND version = 2`,
+        [contributionId],
+      ),
+    ).toBe(1);
+
+    const [immutable] = await getPool().execute<ResultSetHeader>(
+      `UPDATE contributions SET version = version + 1
+       WHERE id = ? AND submitted_by = ? AND contribution_status = 'DRAFT'`,
+      [contributionId, ownerId],
+    );
+    expect(immutable.affectedRows).toBe(0);
+    await getPool().execute('DELETE FROM contributions WHERE id = ?', [contributionId]);
+    await getPool().execute('DELETE FROM users WHERE id IN (?, ?)', [ownerId, strangerId]);
   });
 
   it('7. enforces Google Form submission idempotency', async () => {
