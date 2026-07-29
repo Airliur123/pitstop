@@ -43,6 +43,11 @@ export interface ContributionDraftMainMenu {
   readonly priceAmount?: number | undefined;
 }
 
+export interface ContributionPriceRange {
+  readonly maximum: number;
+  readonly minimum: number;
+}
+
 export interface ContributionFacility {
   readonly code: ContributionFacilityCode;
   readonly status: ContributionFacilityStatus;
@@ -58,14 +63,17 @@ export interface ContributionOperatingHour {
 
 export interface ContributionDraftPayload {
   readonly address?: string | undefined;
+  readonly area?: string | undefined;
   readonly category?: ContributionCategory | undefined;
   readonly facilities?: readonly ContributionFacility[] | undefined;
   readonly landmark?: string | undefined;
   readonly mainMenu?: ContributionDraftMainMenu | undefined;
   readonly mapsUrl?: string | undefined;
+  readonly maximumUsefulBudget?: number | undefined;
   readonly notes?: string | undefined;
   readonly operatingHours?: readonly ContributionOperatingHour[] | undefined;
   readonly placeName?: string | undefined;
+  readonly priceRange?: ContributionPriceRange | undefined;
 }
 
 export interface ContributionDetail {

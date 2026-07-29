@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import { request as httpRequest } from 'node:http';
 
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import {
@@ -10,6 +11,7 @@ import {
   type RowDataPacket,
   seedDatabase,
 } from '@pitstop/database';
+import { canonicalIntegrationSignatureMessage } from '@pitstop/validation';
 import request from 'supertest';
 import { GenericContainer, type StartedTestContainer, Wait } from 'testcontainers';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -17,9 +19,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApiApplication } from '../../src/bootstrap';
 import { createCacheKey } from '../../src/common/cache/cache-key';
 import { RedisService } from '../../src/common/redis/redis.service';
+import { API_ENVIRONMENT, type ApiEnvironmentProvider } from '../../src/configuration';
 import { AdminModerationRepository } from '../../src/modules/admin-moderation/admin-moderation.repository';
 
 const AUTH_TOKEN_SECRET = 'test-auth-token-secret-01234567890123456789';
+const GOOGLE_FORM_CURRENT_SECRET = 'test-google-form-current-key-material-01234567';
+const GOOGLE_FORM_PREVIOUS_SECRET = 'test-google-form-previous-key-material-012345';
 
 interface MailpitMessage {
   readonly ID: string;
@@ -130,8 +135,18 @@ describe.sequential('public, authentication, contribution, and moderation API', 
       ADMIN_MUTATION_RATE_LIMIT_MAX: '500',
       CACHE_REDIS_TIMEOUT_MS: '500',
       PUBLIC_CURSOR_SIGNING_SECRET: 'test-public-cursor-signing-secret-0123456789',
+      GOOGLE_FORM_SOURCE_ID: 'google-form-main',
+      GOOGLE_FORM_SOURCE_ENABLED: 'true',
+      GOOGLE_FORM_CURRENT_KEY_ID: 'test-v2',
+      GOOGLE_FORM_CURRENT_SECRET,
+      GOOGLE_FORM_PREVIOUS_KEY_ID: 'test-v1',
+      GOOGLE_FORM_PREVIOUS_SECRET,
+      GOOGLE_FORM_REPLAY_WINDOW_SECONDS: '300',
+      GOOGLE_FORM_RATE_LIMIT_MAX: '500',
+      GOOGLE_FORM_BODY_LIMIT_BYTES: '1024',
     });
     app = await createApiApplication();
+    await app.listen(0, '127.0.0.1');
   });
 
   afterAll(async () => {
@@ -742,6 +757,203 @@ describe.sequential('public, authentication, contribution, and moderation API', 
     }
   });
 
+  it('durably accepts signed Form submissions with rotation, replay, and strict validation', async () => {
+    const redisService = getApp().get(RedisService);
+    await redisService.run((client) => client.flushdb());
+    const externalId = `form-response-${createUlid()}`;
+    const body = googleFormBody({
+      submitterEmail: 'driver.phase9@example.test',
+    });
+    const accepted = await signedGoogleFormRequest(body, {
+      externalId,
+      keyId: 'test-v2',
+      secret: GOOGLE_FORM_CURRENT_SECRET,
+    }).expect(202);
+    expect(accepted.body.data).toMatchObject({
+      accepted: true,
+      duplicate: false,
+      status: 'RECEIVED',
+    });
+    expect(accepted.headers['cache-control']).toContain('no-store');
+    expect(accepted.headers['set-cookie']).toBeUndefined();
+
+    const duplicate = await signedGoogleFormRequest(body, {
+      externalId,
+      keyId: 'test-v2',
+      secret: GOOGLE_FORM_CURRENT_SECRET,
+    }).expect(202);
+    expect(duplicate.body.data).toMatchObject({
+      duplicate: true,
+      inboxId: accepted.body.data.inboxId,
+    });
+    expect(
+      await apiScalarCount(
+        `SELECT COUNT(*) AS count FROM google_form_submissions
+         WHERE external_submission_id = ?`,
+        [externalId],
+      ),
+    ).toBe(1);
+
+    const changedBody = googleFormBody({ placeName: 'Changed body' });
+    const conflict = await signedGoogleFormRequest(changedBody, {
+      externalId,
+      keyId: 'test-v2',
+      secret: GOOGLE_FORM_CURRENT_SECRET,
+    }).expect(409);
+    expect(conflict.body.code).toBe('INTEGRATION_SUBMISSION_CONFLICT');
+
+    await signedGoogleFormRequest(googleFormBody(), {
+      externalId: `previous-${createUlid()}`,
+      keyId: 'test-v1',
+      secret: GOOGLE_FORM_PREVIOUS_SECRET,
+    }).expect(202);
+
+    const invalidSignature = await signedGoogleFormRequest(googleFormBody(), {
+      externalId: `invalid-signature-${createUlid()}`,
+      keyId: 'test-v2',
+      secret: 'wrong-non-secret-test-key-material-0123456789',
+    }).expect(401);
+    expect(invalidSignature.body.code).toBe('INTEGRATION_SIGNATURE_INVALID');
+
+    const invalidContentType = await request(getApp().getHttpServer())
+      .post('/api/v1/integrations/google-form/submissions')
+      .set('X-PitStop-Source', 'google-form-main')
+      .set('X-PitStop-Submission-Id', `content-type-${createUlid()}`)
+      .set('X-PitStop-Timestamp', new Date().toISOString())
+      .set('X-PitStop-Signature', '0'.repeat(64))
+      .type('text/plain')
+      .send(JSON.stringify(googleFormBody()))
+      .expect(415);
+    expect(invalidContentType.body.code).toBe('INTEGRATION_CONTENT_TYPE_INVALID');
+
+    const stale = await signedGoogleFormRequest(googleFormBody(), {
+      externalId: `stale-${createUlid()}`,
+      keyId: 'test-v2',
+      secret: GOOGLE_FORM_CURRENT_SECRET,
+      timestamp: '2020-01-01T00:00:00.000Z',
+    }).expect(401);
+    expect(stale.body.code).toBe('INTEGRATION_REPLAY_REJECTED');
+
+    const unknown = await signedGoogleFormRequest(googleFormBody(), {
+      externalId: `unknown-${createUlid()}`,
+      keyId: 'test-v2',
+      secret: GOOGLE_FORM_CURRENT_SECRET,
+      sourceId: 'unknown-source',
+    }).expect(401);
+    expect(unknown.body.code).toBe('INTEGRATION_SOURCE_UNKNOWN');
+
+    const invalidPayload = googleFormBody({
+      cheapestMenuName: undefined,
+      cheapestMenuPrice: undefined,
+      maximumUsefulBudget: undefined,
+    });
+    const invalid = await signedGoogleFormRequest(invalidPayload, {
+      externalId: `invalid-payload-${createUlid()}`,
+      keyId: 'test-v2',
+      secret: GOOGLE_FORM_CURRENT_SECRET,
+    }).expect(400);
+    expect(invalid.body.code).toBe('GOOGLE_FORM_PAYLOAD_INVALID');
+
+    const oversizedExternalId = `oversized-whitespace-${createUlid()}`;
+    const whitespaceOversizedBody = `${' '.repeat(1_100)}${JSON.stringify(googleFormBody())}`;
+    const oversized = await request(getApp().getHttpServer())
+      .post('/api/v1/integrations/google-form/submissions')
+      .set('Content-Type', 'application/json')
+      .set('X-PitStop-Source', 'google-form-main')
+      .set('X-PitStop-Submission-Id', oversizedExternalId)
+      .set('X-PitStop-Timestamp', new Date().toISOString())
+      .set('X-PitStop-Signature', '0'.repeat(64))
+      .set('X-PitStop-Key-Id', 'test-v2')
+      .send(whitespaceOversizedBody)
+      .expect(413);
+    expect(oversized.body.code).toBe('INTEGRATION_BODY_TOO_LARGE');
+    expect(
+      await apiScalarCount(
+        'SELECT COUNT(*) AS count FROM google_form_submissions WHERE external_submission_id = ?',
+        [oversizedExternalId],
+      ),
+    ).toBe(0);
+
+    const chunkedExternalId = `oversized-chunked-${createUlid()}`;
+    const chunked = await chunkedGoogleFormRequest(
+      `${JSON.stringify(googleFormBody()).slice(0, -1)},${JSON.stringify('padding')}:${JSON.stringify(
+        'x'.repeat(1_100),
+      )}}`,
+      chunkedExternalId,
+    );
+    expect(chunked.status).toBe(413);
+    expect(chunked.body.code).toBe('INTEGRATION_BODY_TOO_LARGE');
+    expect(
+      await apiScalarCount(
+        'SELECT COUNT(*) AS count FROM google_form_submissions WHERE external_submission_id = ?',
+        [chunkedExternalId],
+      ),
+    ).toBe(0);
+
+    const environment = getApp().get<ApiEnvironmentProvider>(API_ENVIRONMENT);
+    const mutableEnvironment = environment as { GOOGLE_FORM_SOURCE_ENABLED: boolean };
+    mutableEnvironment.GOOGLE_FORM_SOURCE_ENABLED = false;
+    try {
+      const disabled = await signedGoogleFormRequest(googleFormBody(), {
+        externalId: `disabled-${createUlid()}`,
+        keyId: 'test-v2',
+        secret: GOOGLE_FORM_CURRENT_SECRET,
+      }).expect(403);
+      expect(disabled.body.code).toBe('INTEGRATION_SOURCE_DISABLED');
+    } finally {
+      mutableEnvironment.GOOGLE_FORM_SOURCE_ENABLED = true;
+    }
+  });
+
+  it('protects admin integration status and replay with role, CSRF, and redaction', async () => {
+    const userEmail = `phase9-user-${createUlid().toLowerCase()}@example.test`;
+    const user = await authenticatedAgent(userEmail.replace('@example.test', ''));
+    await user.get('/api/v1/admin/integrations/google-form/status').expect(403);
+
+    const adminEmail = `phase9-admin-${createUlid().toLowerCase()}@example.test`;
+    const admin = await authenticatedAgent(adminEmail.replace('@example.test', ''));
+    await pool?.execute(
+      `INSERT INTO user_roles (user_id, role_id)
+       SELECT u.id, r.id FROM users u JOIN roles r ON r.code = 'ADMIN'
+       WHERE u.normalized_email = ?
+       ON DUPLICATE KEY UPDATE assigned_at = assigned_at`,
+      [adminEmail],
+    );
+    const status = await admin.get('/api/v1/admin/integrations/google-form/status').expect(200);
+    expect(status.headers['cache-control']).toContain('no-store');
+    expect(status.body.data.source).toMatchObject({
+      enabled: true,
+      id: 'google-form-main',
+      keyId: 'test-v2',
+    });
+
+    const list = await admin
+      .get('/api/v1/admin/integrations/google-form/submissions?page=1&pageSize=20')
+      .expect(200);
+    expect(list.text).not.toContain('driver.phase9@example.test');
+    const inboxId = list.body.data.items[0].id as string;
+    await pool?.execute(
+      `UPDATE google_form_submissions
+       SET processing_status = 'DEAD_LETTER', last_error_code = 'TEST_RETRYABLE'
+       WHERE id = ?`,
+      [inboxId],
+    );
+    await admin
+      .post(`/api/v1/admin/integrations/google-form/submissions/${inboxId}/replay`)
+      .send({})
+      .expect(403);
+    const replay = await admin
+      .post(`/api/v1/admin/integrations/google-form/submissions/${inboxId}/replay`)
+      .set('Origin', 'http://localhost:3001')
+      .send({})
+      .expect(200);
+    expect(replay.body.data).toMatchObject({
+      inboxId,
+      replayed: true,
+      status: 'RECEIVED',
+    });
+  });
+
   it('serves runtime OpenAPI matching every public route', async () => {
     const response = await request(getApp().getHttpServer()).get('/api/openapi.json').expect(200);
     expect(Object.keys(response.body.paths)).toEqual(
@@ -765,6 +977,11 @@ describe.sequential('public, authentication, contribution, and moderation API', 
         '/api/v1/admin/contributions/{id}/reject',
         '/api/v1/admin/contributions/{id}/approve',
         '/api/v1/admin/contributions/{id}/merge',
+        '/api/v1/integrations/google-form/submissions',
+        '/api/v1/admin/integrations/google-form/status',
+        '/api/v1/admin/integrations/google-form/submissions',
+        '/api/v1/admin/integrations/google-form/submissions/{id}',
+        '/api/v1/admin/integrations/google-form/submissions/{id}/replay',
       ]),
     );
   });
@@ -1000,7 +1217,108 @@ describe.sequential('public, authentication, contribution, and moderation API', 
     await agent.post('/api/v1/auth/email/verify').send({ token }).expect(200);
     return agent;
   }
+
+  function signedGoogleFormRequest(
+    body: unknown,
+    options: {
+      readonly externalId: string;
+      readonly keyId: string;
+      readonly secret: string;
+      readonly sourceId?: string;
+      readonly timestamp?: string;
+    },
+  ) {
+    const sourceId = options.sourceId ?? 'google-form-main';
+    const timestamp = options.timestamp ?? new Date().toISOString();
+    const signature = createHmac('sha256', options.secret)
+      .update(
+        canonicalIntegrationSignatureMessage({
+          body,
+          externalSubmissionId: options.externalId,
+          sourceId,
+          timestamp,
+        }),
+      )
+      .digest('hex');
+    return request(getApp().getHttpServer())
+      .post('/api/v1/integrations/google-form/submissions')
+      .set('X-PitStop-Source', sourceId)
+      .set('X-PitStop-Submission-Id', options.externalId)
+      .set('X-PitStop-Timestamp', timestamp)
+      .set('X-PitStop-Signature', signature)
+      .set('X-PitStop-Key-Id', options.keyId)
+      .send(body);
+  }
+
+  async function chunkedGoogleFormRequest(
+    rawBody: string,
+    externalId: string,
+  ): Promise<{ readonly body: Record<string, unknown>; readonly status: number }> {
+    const apiUrl = new URL('/api/v1/integrations/google-form/submissions', await getApp().getUrl());
+    return new Promise((resolve, reject) => {
+      const timestamp = new Date().toISOString();
+      const outgoing = httpRequest(
+        apiUrl,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Transfer-Encoding': 'chunked',
+            'X-PitStop-Key-Id': 'test-v2',
+            'X-PitStop-Signature': '0'.repeat(64),
+            'X-PitStop-Source': 'google-form-main',
+            'X-PitStop-Submission-Id': externalId,
+            'X-PitStop-Timestamp': timestamp,
+          },
+          method: 'POST',
+        },
+        (response) => {
+          const chunks: Buffer[] = [];
+          response.on('data', (chunk: Buffer) => chunks.push(chunk));
+          response.on('end', () => {
+            const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<
+              string,
+              unknown
+            >;
+            resolve({ body: parsed, status: response.statusCode ?? 0 });
+          });
+        },
+      );
+      outgoing.on('error', reject);
+      const body = Buffer.from(rawBody);
+      for (let offset = 0; offset < body.byteLength; offset += 128) {
+        outgoing.write(body.subarray(offset, offset + 128));
+      }
+      outgoing.end();
+    });
+  }
+
+  async function apiScalarCount(queryText: string, values: readonly string[]): Promise<number> {
+    if (!pool) throw new Error('API integration pool is unavailable');
+    const [rows] = await pool.execute<CountRow[]>(queryText, [...values]);
+    return Number(rows[0]?.count ?? 0);
+  }
 });
+
+function googleFormBody(
+  overrides: Readonly<Record<string, unknown>> = {},
+): Readonly<Record<string, unknown>> {
+  const payload = {
+    address: 'Jl. Phase 9 No. 1',
+    area: 'Tambora',
+    category: 'MAKAN_MURAH',
+    cheapestMenuName: 'Nasi telur',
+    cheapestMenuPrice: 12_000,
+    facilities: [{ code: 'TOILET', status: 'AVAILABLE' }],
+    maximumUsefulBudget: 15_000,
+    placeName: 'Warung Phase 9',
+    ...overrides,
+  };
+  return {
+    payload: Object.fromEntries(Object.entries(payload).filter((entry) => entry[1] !== undefined)),
+    schemaVersion: 1,
+    submittedAt: new Date().toISOString(),
+  };
+}
 
 async function latestMagicLinkToken(email: string): Promise<string> {
   if (!mailpit) throw new Error('Mailpit integration container is not initialized');

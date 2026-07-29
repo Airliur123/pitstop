@@ -2,6 +2,8 @@ import type {
   AdminContributionDetail,
   AdminContributionQueue,
   AdminDashboard,
+  AdminGoogleFormIntegrationStatus,
+  AdminGoogleFormSubmissionList,
   AuthSession,
 } from '@pitstop/contracts';
 import { cookies } from 'next/headers';
@@ -13,6 +15,8 @@ import {
   adminContributionQueueResponseSchema,
   adminDashboardResponseSchema,
   authSessionResponseSchema,
+  googleFormIntegrationStatusResponseSchema,
+  googleFormSubmissionListResponseSchema,
   problemDetailsSchema,
 } from './schemas';
 
@@ -86,6 +90,25 @@ export async function getAdminContribution(id: string): Promise<AdminContributio
   const response = await serverRequest(
     `/admin/contributions/${encodeURIComponent(id)}`,
     adminContributionDetailResponseSchema,
+  );
+  return response.data;
+}
+
+export async function getGoogleFormIntegrationStatus(): Promise<AdminGoogleFormIntegrationStatus> {
+  const response = await serverRequest(
+    '/admin/integrations/google-form/status',
+    googleFormIntegrationStatusResponseSchema,
+  );
+  return response.data;
+}
+
+export async function getGoogleFormSubmissions(
+  query: URLSearchParams,
+): Promise<AdminGoogleFormSubmissionList> {
+  const suffix = query.size > 0 ? `?${query.toString()}` : '';
+  const response = await serverRequest(
+    `/admin/integrations/google-form/submissions${suffix}`,
+    googleFormSubmissionListResponseSchema,
   );
   return response.data;
 }

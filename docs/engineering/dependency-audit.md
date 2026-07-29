@@ -58,11 +58,11 @@ The accessible result list remains the primary experience and the map is an opti
 Map load or tile failures cannot remove the list. Removing React Leaflet also removes its transitive
 `@react-leaflet/core` package and Hippocratic-2.1 license from the production dependency graph.
 
-## Current audit snapshot - 2026-07-27
+## Current audit snapshot - 2026-07-29
 
 `pnpm audit --audit-level critical` passes with **zero critical** advisories. The registry currently
-reports seven pre-existing transitive advisories: two moderate and five high. None is introduced
-through Leaflet or `@types/leaflet`.
+reports seven pre-existing transitive advisories: two moderate and five high. None is introduced by
+the Phase 9 worker testing addition or through Leaflet and `@types/leaflet`.
 
 - **Moderate:** esbuild in Drizzle Kit's development-only esbuild-kit loader
   (`GHSA-67mh-4wv8-2f99`).
@@ -112,3 +112,14 @@ already pinned, installed, and proven compatible with React 19, TypeScript 6, js
 `@pitstop/web`; Phase 8 reuses them to test accessible decision dialogs and status-valid actions in
 their owning app. No new version, production dependency, or package-manager override was
 introduced.
+
+## Phase 9 worker testing additions
+
+`@pitstop/worker` now declares the existing contracts, validation, and database workspace packages
+because job payloads, canonical validation, and transactional inbox effects are shared boundaries.
+It also declares the already pinned `testcontainers@12.0.4` as development-only so worker
+integration tests run against isolated MySQL 8.4 and Redis without relying on the internet.
+
+No new third-party production dependency, database client, queue implementation, geocoder SDK, or
+secret-management library was introduced. The implementation reuses BullMQ, ioredis, mysql2,
+NestJS, native `fetch`, and Node's crypto primitives already in the locked stack.

@@ -89,6 +89,12 @@ export interface AdminContributionDetail {
     readonly id: string;
   } | null;
   readonly decisionReason: string | null;
+  readonly duplicateHints: readonly {
+    readonly candidatePlaceId: string;
+    readonly distanceMeters: number;
+    readonly matchedSignals: readonly string[];
+    readonly score: number;
+  }[];
   readonly history: readonly ModerationHistoryEvent[];
   readonly id: string;
   readonly mergedAt: string | null;

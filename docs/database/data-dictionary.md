@@ -55,12 +55,16 @@ behavior in the Drizzle schema and migration.
 
 ## Integration
 
-- `integration_sources`: unique integration code, name, activation flag and timestamps. Seeded with
-  `GOOGLE_FORM`.
-- `google_form_submissions`: source/external identifier, JSON payload, signature version, processing
-  state/timestamps, optional contribution and failure reason. Source plus external ID is unique.
-- `geocoding_results`: exactly one of contribution/place subject, provider/query, nullable SRID 4326
-  result point, address, confidence from 0 through 1, raw JSON, verification flag and timestamps.
+- `integration_sources`: unique integration code, activation flag, current/previous key identifiers,
+  replay/rate-limit policy and timestamps. It never stores HMAC key material.
+- `google_form_submissions`: durable source/external identity, canonical JSON and schema version,
+  request hash, accepted key identifier, correlation/timestamps, processing and downstream stage
+  states, safe errors, attempts, and nullable contribution link. Source plus external ID is unique.
+- `geocoding_results`: exactly one contribution/place subject, provider, nullable SRID 4326 result,
+  normalized address, confidence/status, bounded raw summary, verification flag and timestamps. A
+  contribution has at most one current geocoding result.
+- `duplicate_place_hints`: unique contribution/candidate pair with inbox relation, distance,
+  deterministic matched signals/score and creation timestamp. Hints never mutate a Place.
 - `idempotency_keys`: scope/key uniqueness, request hash, optional response, lock and expiry
   timestamps. Expiry must follow creation.
 

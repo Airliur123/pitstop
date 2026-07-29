@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseAdminEnvironment, parseApiEnvironment, parseWebEnvironment } from './index';
+import {
+  parseAdminEnvironment,
+  parseApiEnvironment,
+  parseWebEnvironment,
+  parseWorkerEnvironment,
+} from './index';
 
 const validEnvironment: NodeJS.ProcessEnv = {
   NODE_ENV: 'test',
@@ -97,6 +102,66 @@ describe('API environment parser', () => {
         MAIL_HOST: 'smtp.example',
       }),
     ).toThrow(/AUTH_COOKIE_SECURE/);
+  });
+
+  it('requires integration key material only when the Google Form source is enabled', () => {
+    expect(() =>
+      parseApiEnvironment({
+        ...validEnvironment,
+        GOOGLE_FORM_SOURCE_ENABLED: 'true',
+      }),
+    ).toThrow(/GOOGLE_FORM_CURRENT_SECRET/);
+    expect(
+      parseApiEnvironment({
+        ...validEnvironment,
+        GOOGLE_FORM_CURRENT_KEY_ID: 'test-v1',
+        GOOGLE_FORM_CURRENT_SECRET: 'test-google-form-key-material-0123456789',
+        GOOGLE_FORM_SOURCE_ENABLED: 'true',
+      }).GOOGLE_FORM_SOURCE_ENABLED,
+    ).toBe(true);
+  });
+
+  it('requires complete and distinct previous rotation key configuration', () => {
+    expect(() =>
+      parseApiEnvironment({
+        ...validEnvironment,
+        GOOGLE_FORM_PREVIOUS_KEY_ID: 'old-v1',
+      }),
+    ).toThrow(/GOOGLE_FORM_PREVIOUS_SECRET/);
+    expect(() =>
+      parseApiEnvironment({
+        ...validEnvironment,
+        GOOGLE_FORM_CURRENT_KEY_ID: 'same-v1',
+        GOOGLE_FORM_PREVIOUS_KEY_ID: 'same-v1',
+        GOOGLE_FORM_PREVIOUS_SECRET: 'previous-google-form-key-material-01234567',
+      }),
+    ).toThrow(/GOOGLE_FORM_PREVIOUS_KEY_ID/);
+  });
+});
+
+describe('worker environment parser', () => {
+  it('uses deterministic offline geocoding outside production', () => {
+    const parsed = parseWorkerEnvironment({
+      DATABASE_URL: validEnvironment.DATABASE_URL,
+      LOG_LEVEL: 'silent',
+      NODE_ENV: 'test',
+      REDIS_URL: validEnvironment.REDIS_URL,
+    });
+    expect(parsed.GEOCODING_PROVIDER).toBe('deterministic');
+    expect(parsed.WORKER_RECONCILE_INTERVAL_MS).toBe(5000);
+    expect(parsed.WORKER_STAGE_LEASE_SECONDS).toBe(300);
+  });
+
+  it('rejects deterministic geocoding in production', () => {
+    expect(() =>
+      parseWorkerEnvironment({
+        DATABASE_URL: validEnvironment.DATABASE_URL,
+        GEOCODING_PROVIDER: 'deterministic',
+        LOG_LEVEL: 'info',
+        NODE_ENV: 'production',
+        REDIS_URL: validEnvironment.REDIS_URL,
+      }),
+    ).toThrow(/GEOCODING_PROVIDER/);
   });
 });
 

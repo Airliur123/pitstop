@@ -1,3 +1,6 @@
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { eq } from 'drizzle-orm';
@@ -48,6 +51,7 @@ const expectedTables = [
   'contribution_payloads',
   'contribution_photos',
   'contributions',
+  'duplicate_place_hints',
   'facilities',
   'geocoding_results',
   'google_form_submissions',
@@ -74,6 +78,10 @@ const expectedTables = [
 
 describe.sequential('MySQL 8.4 spatial database', () => {
   let container: StartedTestContainer | undefined;
+  let legacyContributionId: string;
+  let legacyPlaceGeocodingId: string;
+  let legacyPreferredGeocodingId: string;
+  let migrationFixtureRoot: string | undefined;
   let pool: Pool | undefined;
 
   const getPool = (): Pool => {
@@ -108,21 +116,28 @@ describe.sequential('MySQL 8.4 spatial database', () => {
       port: container.getMappedPort(3306),
       user: 'pitstop_test',
     });
-    await migrate(drizzle({ client: pool }), {
-      migrationsFolder: fileURLToPath(new URL('../migrations', import.meta.url)),
-    });
+    const migrationsFolder = fileURLToPath(new URL('../migrations', import.meta.url));
+    const stagedMigrations = await stageMigrationsThrough0008(migrationsFolder);
+    migrationFixtureRoot = stagedMigrations.root;
+    await migrate(drizzle({ client: pool }), { migrationsFolder: stagedMigrations.folder });
+    const legacyFixture = await insertLegacyGeocodingMigrationFixture(pool);
+    legacyContributionId = legacyFixture.contributionId;
+    legacyPlaceGeocodingId = legacyFixture.placeGeocodingId;
+    legacyPreferredGeocodingId = legacyFixture.preferredGeocodingId;
+    await migrate(drizzle({ client: pool }), { migrationsFolder });
     await seedDatabase(pool);
   });
 
   afterAll(async () => {
     await pool?.end();
     await container?.stop();
+    if (migrationFixtureRoot) await rm(migrationFixtureRoot, { force: true, recursive: true });
   });
 
   it('1. migrates an empty MySQL database', async () => {
     expect(
       await countRows(getPool(), 'information_schema.tables', 'table_schema = DATABASE()'),
-    ).toBe(31);
+    ).toBe(32);
   });
 
   it('2. runs migration again without schema drift', async () => {
@@ -132,7 +147,24 @@ describe.sequential('MySQL 8.4 spatial database', () => {
     const [rows] = await getPool().query<CountRow[]>(
       'SELECT COUNT(*) AS count FROM __drizzle_migrations',
     );
-    expect(Number(rows[0]?.count)).toBe(8);
+    expect(Number(rows[0]?.count)).toBe(10);
+  });
+
+  it('2a. migration 0009 deterministically deduplicates contribution geocoding only', async () => {
+    const [contributionRows] = await getPool().execute<IdRow[]>(
+      `SELECT id FROM geocoding_results
+       WHERE contribution_id = ?
+       ORDER BY id ASC`,
+      [legacyContributionId],
+    );
+    expect(contributionRows.map((row) => row.id)).toEqual([legacyPreferredGeocodingId]);
+    expect(
+      await scalarCount(
+        getPool(),
+        'SELECT COUNT(*) AS count FROM geocoding_results WHERE id = ? AND place_id IS NOT NULL',
+        [legacyPlaceGeocodingId],
+      ),
+    ).toBe(1);
   });
 
   it('3. creates every required domain table', async () => {
@@ -415,7 +447,7 @@ describe.sequential('MySQL 8.4 spatial database', () => {
   });
 
   it('7. enforces Google Form submission idempotency', async () => {
-    const sourceId = await idByCode(getPool(), 'integration_sources', 'GOOGLE_FORM');
+    const sourceId = await idByCode(getPool(), 'integration_sources', 'google-form-main');
     const externalId = `submission-${createUlid()}`;
     await insertGoogleSubmission(getPool(), sourceId, externalId);
     await expect(insertGoogleSubmission(getPool(), sourceId, externalId)).rejects.toMatchObject({
@@ -722,9 +754,10 @@ describe.sequential('MySQL 8.4 spatial database', () => {
       id: resultId,
       placeId: await seededPlaceId(getPool(), 'data-simulasi-warung-bu-ani'),
       provider: 'integration-test',
-      queryText: 'Typed POINT mapping',
+      normalizedAddress: 'Typed POINT mapping',
       resultLocation: { longitude: 106.8123, latitude: -6.1512 },
       rawResponse: { source: 'integration-test' },
+      status: 'SUCCEEDED',
     });
     const [row] = await database
       .select({ location: geocodingResults.resultLocation })
@@ -1011,7 +1044,202 @@ describe.sequential('MySQL 8.4 spatial database', () => {
     });
     expect(result.places).toEqual([]);
   });
+
+  it('39. enforces the durable Google Form inbox identity and status indexes', async () => {
+    const sourceId = await idByCode(getPool(), 'integration_sources', 'google-form-main');
+    const externalId = `form-${createUlid()}`;
+    await insertGoogleSubmission(getPool(), sourceId, externalId);
+    await expect(insertGoogleSubmission(getPool(), sourceId, externalId)).rejects.toMatchObject({
+      code: 'ER_DUP_ENTRY',
+    });
+    expect(
+      await scalarCount(
+        getPool(),
+        `SELECT COUNT(*) AS count FROM google_form_submissions
+         WHERE integration_source_id = ? AND external_submission_id = ?
+           AND processing_status = 'RECEIVED' AND contribution_id IS NULL`,
+        [sourceId, externalId],
+      ),
+    ).toBe(1);
+  });
+
+  it('40. relates one pending system contribution to geocoding and duplicate hints', async () => {
+    const sourceId = await idByCode(getPool(), 'integration_sources', 'google-form-main');
+    const inboxId = createUlid();
+    const contributionId = createUlid();
+    const candidatePlaceId = await seededPlaceId(getPool(), 'data-simulasi-warung-bu-ani');
+    await getPool().execute(
+      `INSERT INTO contributions (
+         id, submitted_by, source, contribution_status, submitted_at
+       ) VALUES (?, NULL, 'GOOGLE_FORM', 'PENDING', CURRENT_TIMESTAMP(3))`,
+      [contributionId],
+    );
+    await getPool().execute(
+      `INSERT INTO contribution_payloads (contribution_id, schema_version, payload)
+       VALUES (?, 1, JSON_OBJECT(
+         'placeName', 'Phase 9 fixture', 'address', 'Tambora',
+         'category', 'TOILET', 'facilities', JSON_ARRAY(), 'operatingHours', JSON_ARRAY()
+       ))`,
+      [contributionId],
+    );
+    await insertGoogleSubmission(
+      getPool(),
+      sourceId,
+      `form-${createUlid()}`,
+      inboxId,
+      contributionId,
+    );
+    await getPool().execute(
+      `INSERT INTO geocoding_results (
+         id, contribution_id, provider, result_location, normalized_address,
+         confidence, status, raw_response
+       ) VALUES (?, ?, 'DETERMINISTIC',
+         ST_SRID(POINT(106.8, -6.15), 4326), 'Tambora', 0.9200, 'SUCCEEDED',
+         JSON_OBJECT('fixture', true))`,
+      [createUlid(), contributionId],
+    );
+    await getPool().execute(
+      `INSERT INTO duplicate_place_hints (
+         id, contribution_id, google_form_submission_id, candidate_place_id,
+         distance_meters, matched_signals, hint_score
+       ) VALUES (?, ?, ?, ?, 50, JSON_ARRAY('SPATIAL_PROXIMITY', 'CATEGORY'), 0.6000)`,
+      [createUlid(), contributionId, inboxId, candidatePlaceId],
+    );
+    expect(
+      await scalarCount(
+        getPool(),
+        `SELECT COUNT(*) AS count
+         FROM google_form_submissions g
+         JOIN contributions c ON c.id = g.contribution_id
+         JOIN geocoding_results gr ON gr.contribution_id = c.id
+         JOIN duplicate_place_hints dh ON dh.contribution_id = c.id
+         WHERE g.id = ? AND c.submitted_by IS NULL
+           AND c.source = 'GOOGLE_FORM' AND c.contribution_status = 'PENDING'`,
+        [inboxId],
+      ),
+    ).toBe(1);
+    await expect(
+      getPool().execute(
+        `INSERT INTO geocoding_results (
+           id, contribution_id, provider, status
+         ) VALUES (?, ?, 'DETERMINISTIC', 'FAILED')`,
+        [createUlid(), contributionId],
+      ),
+    ).rejects.toMatchObject({ code: 'ER_DUP_ENTRY' });
+  });
 });
+
+async function stageMigrationsThrough0008(
+  sourceFolder: string,
+): Promise<{ readonly folder: string; readonly root: string }> {
+  const root = await mkdtemp(join(tmpdir(), 'pitstop-migrations-'));
+  const folder = join(root, 'migrations');
+  await cp(sourceFolder, folder, { recursive: true });
+  const journalPath = join(folder, 'meta', '_journal.json');
+  const journal = JSON.parse(await readFile(journalPath, 'utf8')) as {
+    readonly dialect: string;
+    readonly entries: readonly { readonly idx: number }[];
+    readonly version: string;
+  };
+  await writeFile(
+    journalPath,
+    `${JSON.stringify(
+      {
+        ...journal,
+        entries: journal.entries.filter((entry) => entry.idx <= 8),
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+  return { folder, root };
+}
+
+async function insertLegacyGeocodingMigrationFixture(pool: Pool): Promise<{
+  readonly contributionId: string;
+  readonly placeGeocodingId: string;
+  readonly preferredGeocodingId: string;
+}> {
+  const contributionId = createUlid();
+  const placeId = createUlid();
+  await pool.execute(
+    `INSERT INTO contributions (
+       id, submitted_by, source, contribution_status, submitted_at
+     ) VALUES (?, NULL, 'GOOGLE_FORM', 'PENDING', CURRENT_TIMESTAMP(3))`,
+    [contributionId],
+  );
+  await pool.execute(
+    `INSERT INTO places (
+       id, name, slug, address, district, city, province, location,
+       place_status, verification_status, data_freshness_at
+     ) VALUES (?, 'Legacy migration fixture', ?, 'Fixture address', 'Fixture district',
+       'Fixture city', 'Fixture province', ST_SRID(POINT(106.8, -6.1), 4326),
+       'DRAFT', 'UNVERIFIED', CURRENT_TIMESTAMP(3))`,
+    [placeId, `legacy-migration-${placeId.toLowerCase()}`],
+  );
+
+  const tiedIds = [createUlid(), createUlid()].sort();
+  const candidates = [
+    {
+      confidence: '0.9900',
+      id: createUlid(),
+      status: 'FAILED',
+      updatedAt: '2026-07-29 00:00:05.000',
+    },
+    {
+      confidence: '0.9900',
+      id: createUlid(),
+      status: 'LOW_CONFIDENCE',
+      updatedAt: '2026-07-29 00:00:05.000',
+    },
+    {
+      confidence: '0.5000',
+      id: createUlid(),
+      status: 'SUCCEEDED',
+      updatedAt: '2026-07-29 00:00:05.000',
+    },
+    {
+      confidence: '0.9000',
+      id: createUlid(),
+      status: 'SUCCEEDED',
+      updatedAt: '2026-07-29 00:00:04.000',
+    },
+    {
+      confidence: '0.9000',
+      id: tiedIds[0] as string,
+      status: 'SUCCEEDED',
+      updatedAt: '2026-07-29 00:00:06.000',
+    },
+    {
+      confidence: '0.9000',
+      id: tiedIds[1] as string,
+      status: 'SUCCEEDED',
+      updatedAt: '2026-07-29 00:00:06.000',
+    },
+  ] as const;
+  for (const candidate of candidates) {
+    await pool.execute(
+      `INSERT INTO geocoding_results (
+         id, contribution_id, provider, confidence, status, created_at, updated_at
+       ) VALUES (?, ?, 'LEGACY_FIXTURE', ?, ?, '2026-07-29 00:00:00.000', ?)`,
+      [candidate.id, contributionId, candidate.confidence, candidate.status, candidate.updatedAt],
+    );
+  }
+  const placeGeocodingId = createUlid();
+  await pool.execute(
+    `INSERT INTO geocoding_results (
+       id, place_id, provider, confidence, status, created_at, updated_at
+     ) VALUES (?, ?, 'LEGACY_FIXTURE', 0.1000, 'FAILED',
+       '2026-07-29 00:00:00.000', '2026-07-29 00:00:00.000')`,
+    [placeGeocodingId, placeId],
+  );
+  return {
+    contributionId,
+    placeGeocodingId,
+    preferredGeocodingId: tiedIds[0] as string,
+  };
+}
 
 async function insertUser(pool: Pool, email: string): Promise<Ulid> {
   const id = createUlid();
@@ -1087,13 +1315,28 @@ async function insertContribution(pool: Pool, userId: Ulid): Promise<Ulid> {
   return id;
 }
 
-async function insertGoogleSubmission(pool: Pool, sourceId: string, externalId: string) {
+async function insertGoogleSubmission(
+  pool: Pool,
+  sourceId: string,
+  externalId: string,
+  id = createUlid(),
+  contributionId: string | null = null,
+) {
   return pool.execute(
     `INSERT INTO google_form_submissions (
        id, integration_source_id, external_submission_id, payload,
-       signature_version, received_at, processing_status
-     ) VALUES (?, ?, ?, JSON_OBJECT('simulation', true), 1, CURRENT_TIMESTAMP(3), 'RECEIVED')`,
-    [createUlid(), sourceId, externalId],
+       payload_schema_version, request_hash, accepted_key_id, correlation_id,
+       received_at, submitted_at, processing_status, contribution_id
+     ) VALUES (?, ?, ?, JSON_OBJECT(
+       'placeName', 'Data Simulasi', 'address', 'Tambora', 'area', 'Tambora',
+       'category', 'TOILET', 'facilities', JSON_ARRAY(), 'openingHours', JSON_ARRAY(),
+       'sourceMetadata', JSON_OBJECT(
+         'sourceId', 'google-form-main', 'externalSubmissionId', ?,
+         'receivedAt', '2026-07-29T00:00:00.000Z',
+         'submittedAt', '2026-07-29T00:00:00.000Z'
+       )
+     ), 1, ?, 'test-v1', ?, CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3), 'RECEIVED', ?)`,
+    [id, sourceId, externalId, externalId, 'a'.repeat(64), `request-${id}`, contributionId],
   );
 }
 

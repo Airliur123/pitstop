@@ -28,6 +28,11 @@ const authenticationSecretSchema = z
   .refine((value) => Buffer.byteLength(value, 'utf8') >= 32, {
     message: 'must contain at least 32 UTF-8 bytes',
   });
+const integrationSecretSchema = z
+  .string()
+  .refine((value) => Buffer.byteLength(value, 'utf8') >= 32, {
+    message: 'must contain at least 32 UTF-8 bytes',
+  });
 
 export const databaseEnvironmentSchema = z.object({ DATABASE_URL: urlSchema });
 export const redisEnvironmentSchema = z.object({ REDIS_URL: urlSchema });
@@ -208,6 +213,43 @@ export const apiEnvironmentSchema = z
       .max(1_000)
       .optional()
       .default(60),
+    GOOGLE_FORM_SOURCE_ID: z
+      .string()
+      .regex(/^[a-z][a-z0-9-]{2,79}$/)
+      .optional()
+      .default('google-form-main'),
+    GOOGLE_FORM_SOURCE_ENABLED: booleanStringSchema.optional().default(false),
+    GOOGLE_FORM_CURRENT_KEY_ID: z
+      .string()
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$/)
+      .optional()
+      .default('v1'),
+    GOOGLE_FORM_CURRENT_SECRET: integrationSecretSchema.optional(),
+    GOOGLE_FORM_PREVIOUS_KEY_ID: z
+      .string()
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$/)
+      .optional(),
+    GOOGLE_FORM_PREVIOUS_SECRET: integrationSecretSchema.optional(),
+    GOOGLE_FORM_REPLAY_WINDOW_SECONDS: positiveIntegerEnvironmentSchema
+      .min(60)
+      .max(3_600)
+      .optional()
+      .default(300),
+    GOOGLE_FORM_RATE_LIMIT_WINDOW_SECONDS: positiveIntegerEnvironmentSchema
+      .min(10)
+      .max(3_600)
+      .optional()
+      .default(60),
+    GOOGLE_FORM_RATE_LIMIT_MAX: positiveIntegerEnvironmentSchema
+      .min(1)
+      .max(10_000)
+      .optional()
+      .default(120),
+    GOOGLE_FORM_BODY_LIMIT_BYTES: positiveIntegerEnvironmentSchema
+      .min(1_024)
+      .max(1_048_576)
+      .optional()
+      .default(131_072),
     AUTH_TOKEN_SECRET: authenticationSecretSchema.optional(),
     AUTH_SESSION_SECRET: authenticationSecretSchema.optional(),
     AUTH_COOKIE_SECURE: booleanStringSchema.optional().default(false),
@@ -265,6 +307,33 @@ export const apiEnvironmentSchema = z
         message: 'MAIL_USER and MAIL_PASSWORD must be configured together',
       });
     }
+    if (environment.GOOGLE_FORM_SOURCE_ENABLED && !environment.GOOGLE_FORM_CURRENT_SECRET) {
+      context.addIssue({
+        code: 'custom',
+        path: ['GOOGLE_FORM_CURRENT_SECRET'],
+        message: 'is required when GOOGLE_FORM_SOURCE_ENABLED is true',
+      });
+    }
+    if (
+      Boolean(environment.GOOGLE_FORM_PREVIOUS_KEY_ID) !==
+      Boolean(environment.GOOGLE_FORM_PREVIOUS_SECRET)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['GOOGLE_FORM_PREVIOUS_SECRET'],
+        message: 'previous key id and secret must be configured together',
+      });
+    }
+    if (
+      environment.GOOGLE_FORM_PREVIOUS_KEY_ID &&
+      environment.GOOGLE_FORM_PREVIOUS_KEY_ID === environment.GOOGLE_FORM_CURRENT_KEY_ID
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['GOOGLE_FORM_PREVIOUS_KEY_ID'],
+        message: 'must differ from GOOGLE_FORM_CURRENT_KEY_ID',
+      });
+    }
     if (environment.NODE_ENV === 'production') {
       if (!environment.AUTH_TOKEN_SECRET) {
         context.addIssue({
@@ -311,10 +380,48 @@ export const apiEnvironmentSchema = z
     }
   });
 
-export const workerEnvironmentSchema = z.object({
-  ...commonSchema,
-  REDIS_URL: urlSchema,
-});
+export const workerEnvironmentSchema = z
+  .object({
+    ...commonSchema,
+    DATABASE_URL: urlSchema,
+    REDIS_URL: urlSchema,
+    WORKER_RECONCILE_INTERVAL_MS: positiveIntegerEnvironmentSchema
+      .min(1_000)
+      .max(300_000)
+      .optional()
+      .default(5_000),
+    WORKER_STAGE_LEASE_SECONDS: positiveIntegerEnvironmentSchema
+      .min(30)
+      .max(3_600)
+      .optional()
+      .default(300),
+    GEOCODING_PROVIDER: z.enum(['deterministic', 'nominatim']).optional().default('deterministic'),
+    GEOCODING_BASE_URL: urlSchema.optional().default('https://nominatim.openstreetmap.org'),
+    GEOCODING_USER_AGENT: nonEmptyStringSchema.optional().default('PitStop/1.0'),
+    GEOCODING_HTTP_TIMEOUT_MS: positiveIntegerEnvironmentSchema
+      .min(1_000)
+      .max(30_000)
+      .optional()
+      .default(30_000),
+    GEOCODING_CONFIDENCE_THRESHOLD: z.coerce.number<number>().min(0).max(1).optional().default(0.7),
+    DUPLICATE_RADIUS_METERS: positiveIntegerEnvironmentSchema
+      .min(25)
+      .max(2_000)
+      .optional()
+      .default(250),
+  })
+  .superRefine((environment, context) => {
+    if (
+      environment.NODE_ENV === 'production' &&
+      environment.GEOCODING_PROVIDER === 'deterministic'
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['GEOCODING_PROVIDER'],
+        message: 'deterministic geocoding is not allowed in production',
+      });
+    }
+  });
 
 export type WebEnvironment = z.infer<typeof webEnvironmentSchema>;
 export type AdminEnvironment = z.infer<typeof adminEnvironmentSchema>;

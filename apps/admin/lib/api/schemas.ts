@@ -6,6 +6,8 @@ import {
   contributionFacilityStatusValues,
   contributionSourceValues,
   contributionStatusValues,
+  googleFormSubmissionStatusValues,
+  integrationStageStatusValues,
   moderationActionValues,
 } from '@pitstop/contracts';
 import { z } from 'zod';
@@ -105,6 +107,7 @@ const operatingHourSchema = z
 const contributionPayloadSchema = z
   .object({
     address: z.string().optional(),
+    area: z.string().optional(),
     category: z.enum(contributionCategoryValues).optional(),
     facilities: z.array(facilitySchema).optional(),
     landmark: z.string().optional(),
@@ -116,9 +119,17 @@ const contributionPayloadSchema = z
       .strict()
       .optional(),
     mapsUrl: z.string().optional(),
+    maximumUsefulBudget: z.number().int().positive().optional(),
     notes: z.string().optional(),
     operatingHours: z.array(operatingHourSchema).optional(),
     placeName: z.string().optional(),
+    priceRange: z
+      .object({
+        maximum: z.number().int().positive(),
+        minimum: z.number().int().positive(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -129,6 +140,16 @@ const contributionDetailSchema = z
     currentReviewer: reviewerSchema.nullable(),
     contributor: z.object({ email: z.string(), id: z.string() }).strict().nullable(),
     decisionReason: z.string().nullable(),
+    duplicateHints: z.array(
+      z
+        .object({
+          candidatePlaceId: z.string(),
+          distanceMeters: z.number().nonnegative(),
+          matchedSignals: z.array(z.string()),
+          score: z.number().min(0).max(1),
+        })
+        .strict(),
+    ),
     history: z.array(historyEventSchema),
     id: z.string(),
     mergedAt: z.string().nullable(),
@@ -238,3 +259,64 @@ export const problemDetailsSchema = z
   .passthrough();
 
 export const adminQueueSortSchema = z.enum(adminContributionSortValues);
+
+const googleFormStatusCountsSchema = z.object(
+  Object.fromEntries(
+    googleFormSubmissionStatusValues.map((status) => [status, z.number().int().nonnegative()]),
+  ) as Record<(typeof googleFormSubmissionStatusValues)[number], z.ZodNumber>,
+);
+
+const googleFormSubmissionItemSchema = z
+  .object({
+    attemptCount: z.number().int().nonnegative(),
+    contributionId: z.string().nullable(),
+    duplicateDetectionStatus: z.enum(integrationStageStatusValues),
+    externalSubmissionId: z.string(),
+    geocodingStatus: z.enum(integrationStageStatusValues),
+    id: z.string(),
+    lastErrorCode: z.string().nullable(),
+    receivedAt: z.string(),
+    status: z.enum(googleFormSubmissionStatusValues),
+    submitterEmailMasked: z.string().nullable(),
+    updatedAt: z.string(),
+  })
+  .strict();
+
+export const googleFormIntegrationStatusResponseSchema = successSchema(
+  z
+    .object({
+      counts: googleFormStatusCountsSchema,
+      lastSuccessfulSyncAt: z.string().nullable(),
+      queue: z
+        .object({
+          delayed: z.number().int().nonnegative(),
+          pending: z.number().int().nonnegative(),
+        })
+        .strict(),
+      recentReceived: z.number().int().nonnegative(),
+      source: z
+        .object({
+          enabled: z.boolean(),
+          id: z.string(),
+          keyId: z.string(),
+        })
+        .strict(),
+    })
+    .strict(),
+);
+
+export const googleFormSubmissionListResponseSchema = successSchema(
+  z
+    .object({
+      items: z.array(googleFormSubmissionItemSchema),
+      pagination: z
+        .object({
+          page: z.number().int().positive(),
+          pageSize: z.number().int().positive(),
+          totalItems: z.number().int().nonnegative(),
+          totalPages: z.number().int().positive(),
+        })
+        .strict(),
+    })
+    .strict(),
+);

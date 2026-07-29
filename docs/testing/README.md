@@ -11,3 +11,9 @@ services for Playwright authentication and contribution flows. Run `pnpm db:test
 full contribution case tagged `@contribution-core` run once in the 390px project. See
 [the authentication test matrix](../authentication/README.md#tests) and
 [the contribution guide](../contributions/README.md#local-run-and-tests).
+
+Phase 9 adds `pnpm test:worker:integration` with isolated MySQL/Redis containers. The API suite
+checks signed ingestion, key rotation, replay/body conflicts, admin RBAC/CSRF and OpenAPI. The
+`@admin-core` Playwright integration case uses a local HMAC client, the deterministic geocoder, and
+the real reconciliation worker to cover inbox-to-moderation flow, duplicate delivery, low
+confidence, duplicate hints, USER denial, and axe. It does not call Google Cloud or the internet.

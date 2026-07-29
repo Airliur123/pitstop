@@ -208,8 +208,23 @@ const contributionPayload = {
       enum: ['MAKAN_MURAH', 'NGOPI', 'TOILET', 'MUSALA', 'ISTIRAHAT'],
     },
     address: { type: 'string' as const, maxLength: 500 },
+    area: { type: 'string' as const, maxLength: 180 },
     landmark: { type: 'string' as const, maxLength: 255 },
     mapsUrl: { type: 'string' as const, format: 'uri', maxLength: 1_000 },
+    maximumUsefulBudget: {
+      type: 'integer' as const,
+      minimum: 1,
+      maximum: 10_000_000,
+    },
+    priceRange: {
+      type: 'object' as const,
+      additionalProperties: false,
+      required: ['minimum', 'maximum'],
+      properties: {
+        minimum: { type: 'integer' as const, minimum: 1, maximum: 10_000_000 },
+        maximum: { type: 'integer' as const, minimum: 1, maximum: 10_000_000 },
+      },
+    },
     mainMenu: {
       type: 'object' as const,
       additionalProperties: false,
@@ -365,6 +380,7 @@ const adminContributionDetail = {
     'currentReviewer',
     'contributor',
     'decisionReason',
+    'duplicateHints',
     'verifiedLocation',
     'publicationTarget',
     'mergedPlaceId',
@@ -387,6 +403,19 @@ const adminContributionDetail = {
     currentReviewer: { ...adminReviewer, nullable: true },
     contributor: { type: 'object' as const, nullable: true },
     decisionReason: { type: 'string' as const, nullable: true },
+    duplicateHints: {
+      type: 'array' as const,
+      items: {
+        type: 'object' as const,
+        required: ['candidatePlaceId', 'distanceMeters', 'matchedSignals', 'score'],
+        properties: {
+          candidatePlaceId: { type: 'string' as const },
+          distanceMeters: { type: 'number' as const, minimum: 0 },
+          matchedSignals: { type: 'array' as const, items: { type: 'string' as const } },
+          score: { type: 'number' as const, minimum: 0, maximum: 1 },
+        },
+      },
+    },
     verifiedLocation: { ...verifiedLocation, nullable: true },
     publicationTarget: { type: 'object' as const, nullable: true },
     mergedPlaceId: { type: 'string' as const, nullable: true },
@@ -488,6 +517,182 @@ export const mergeMutationResponseSchema = successResponse({
     replayed: { type: 'boolean' as const },
     placeId: { type: 'string' as const },
     placeSlug: { type: 'string' as const },
+  },
+});
+
+const googleFormSubmissionStatuses = [
+  'RECEIVED',
+  'QUEUED',
+  'PROCESSING',
+  'COMPLETED',
+  'RETRYABLE_FAILURE',
+  'DEAD_LETTER',
+  'REJECTED_INVALID',
+];
+const integrationStageStatuses = [
+  'PENDING',
+  'PROCESSING',
+  'SUCCEEDED',
+  'LOW_CONFIDENCE',
+  'FAILED',
+  'SKIPPED',
+];
+
+export const googleFormInboundRequestSchema = {
+  type: 'object' as const,
+  additionalProperties: false,
+  required: ['schemaVersion', 'submittedAt', 'payload'],
+  properties: {
+    schemaVersion: { type: 'integer' as const, enum: [1] },
+    submittedAt: { type: 'string' as const, format: 'date-time' },
+    payload: {
+      type: 'object' as const,
+      additionalProperties: false,
+      required: ['placeName', 'address', 'area', 'category'],
+      properties: {
+        placeName: { type: 'string' as const, maxLength: 180 },
+        address: { type: 'string' as const, maxLength: 500 },
+        area: { type: 'string' as const, maxLength: 180 },
+        category: {
+          type: 'string' as const,
+          enum: ['MAKAN_MURAH', 'NGOPI', 'TOILET', 'MUSALA', 'ISTIRAHAT'],
+        },
+        landmark: { type: 'string' as const, maxLength: 255 },
+        mapUrl: { type: 'string' as const, format: 'uri' },
+        cheapestMenuName: { type: 'string' as const, maxLength: 180 },
+        cheapestMenuPrice: { type: 'integer' as const, minimum: 1 },
+        maximumUsefulBudget: { type: 'integer' as const, minimum: 1 },
+        priceRange: {
+          type: 'object' as const,
+          additionalProperties: false,
+          required: ['minimum', 'maximum'],
+          properties: {
+            minimum: { type: 'integer' as const, minimum: 1 },
+            maximum: { type: 'integer' as const, minimum: 1 },
+          },
+        },
+        facilities: { type: 'array' as const, items: { type: 'object' as const } },
+        openingHours: { type: 'array' as const, items: { type: 'object' as const } },
+        notes: { type: 'string' as const, maxLength: 1000 },
+        submitterEmail: { type: 'string' as const, format: 'email' },
+      },
+    },
+  },
+};
+
+export const googleFormAcceptedResponseSchema = successResponse({
+  type: 'object' as const,
+  required: ['accepted', 'duplicate', 'inboxId', 'status'],
+  properties: {
+    accepted: { type: 'boolean' as const, enum: [true] },
+    duplicate: { type: 'boolean' as const },
+    inboxId: { type: 'string' as const, minLength: 26, maxLength: 26 },
+    status: { type: 'string' as const, enum: googleFormSubmissionStatuses },
+  },
+});
+
+export const googleFormIntegrationStatusResponseSchema = successResponse({
+  type: 'object' as const,
+  required: ['source', 'counts', 'recentReceived', 'lastSuccessfulSyncAt', 'queue'],
+  properties: {
+    source: { type: 'object' as const },
+    counts: { type: 'object' as const },
+    recentReceived: { type: 'integer' as const, minimum: 0 },
+    lastSuccessfulSyncAt: { type: 'string' as const, format: 'date-time', nullable: true },
+    queue: { type: 'object' as const },
+  },
+});
+
+const googleFormSubmissionItem = {
+  type: 'object' as const,
+  required: [
+    'id',
+    'externalSubmissionId',
+    'status',
+    'attemptCount',
+    'contributionId',
+    'geocodingStatus',
+    'duplicateDetectionStatus',
+    'lastErrorCode',
+    'submitterEmailMasked',
+    'receivedAt',
+    'updatedAt',
+  ],
+  properties: {
+    id: { type: 'string' as const },
+    externalSubmissionId: { type: 'string' as const },
+    status: { type: 'string' as const, enum: googleFormSubmissionStatuses },
+    attemptCount: { type: 'integer' as const, minimum: 0 },
+    contributionId: { type: 'string' as const, nullable: true },
+    geocodingStatus: { type: 'string' as const, enum: integrationStageStatuses },
+    duplicateDetectionStatus: { type: 'string' as const, enum: integrationStageStatuses },
+    lastErrorCode: { type: 'string' as const, nullable: true },
+    submitterEmailMasked: { type: 'string' as const, nullable: true },
+    receivedAt: { type: 'string' as const, format: 'date-time' },
+    updatedAt: { type: 'string' as const, format: 'date-time' },
+  },
+};
+
+export const googleFormSubmissionListResponseSchema = successResponse({
+  type: 'object' as const,
+  required: ['items', 'pagination'],
+  properties: {
+    items: { type: 'array' as const, items: googleFormSubmissionItem },
+    pagination: { type: 'object' as const },
+  },
+});
+
+export const googleFormSubmissionDetailResponseSchema = successResponse({
+  ...googleFormSubmissionItem,
+  required: [
+    ...googleFormSubmissionItem.required,
+    'payloadSummary',
+    'submittedAt',
+    'processedAt',
+    'duplicateHints',
+  ],
+  properties: {
+    ...googleFormSubmissionItem.properties,
+    payloadSummary: {
+      type: 'object' as const,
+      required: ['placeName', 'area', 'category'],
+      properties: {
+        placeName: { type: 'string' as const },
+        area: { type: 'string' as const },
+        category: {
+          type: 'string' as const,
+          enum: ['MAKAN_MURAH', 'NGOPI', 'TOILET', 'MUSALA', 'ISTIRAHAT'],
+        },
+      },
+    },
+    submittedAt: { type: 'string' as const, format: 'date-time' },
+    processedAt: { type: 'string' as const, format: 'date-time', nullable: true },
+    duplicateHints: {
+      type: 'array' as const,
+      items: {
+        type: 'object' as const,
+        required: ['candidatePlaceId', 'distanceMeters', 'matchedSignals', 'score'],
+        properties: {
+          candidatePlaceId: { type: 'string' as const },
+          distanceMeters: { type: 'number' as const, minimum: 0 },
+          matchedSignals: {
+            type: 'array' as const,
+            items: { type: 'string' as const },
+          },
+          score: { type: 'number' as const, minimum: 0, maximum: 1 },
+        },
+      },
+    },
+  },
+});
+
+export const googleFormReplayResponseSchema = successResponse({
+  type: 'object' as const,
+  required: ['inboxId', 'replayed', 'status'],
+  properties: {
+    inboxId: { type: 'string' as const },
+    replayed: { type: 'boolean' as const, enum: [true] },
+    status: { type: 'string' as const, enum: googleFormSubmissionStatuses },
   },
 });
 

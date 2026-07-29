@@ -82,6 +82,22 @@ const contributionDraftMainMenuSchema = z
   })
   .strict();
 
+const contributionRupiahSchema = z
+  .number()
+  .int('Nilai rupiah harus berupa integer.')
+  .min(1, 'Nilai rupiah harus lebih besar dari nol.')
+  .max(10_000_000, 'Nilai rupiah melebihi batas yang didukung.');
+
+const contributionPriceRangeSchema = z
+  .object({
+    maximum: contributionRupiahSchema,
+    minimum: contributionRupiahSchema,
+  })
+  .strict()
+  .refine((value) => value.minimum <= value.maximum, {
+    message: 'Batas minimum kisaran harga tidak boleh melebihi batas maksimum.',
+  });
+
 export const contributionFacilitySchema = z
   .object({
     code: contributionFacilityCodeSchema,
@@ -169,14 +185,17 @@ const operatingHoursSchema = z
 export const contributionDraftSchema = z
   .object({
     address: optionalText(500, 'Alamat'),
+    area: optionalText(180, 'Wilayah'),
     category: contributionCategorySchema.optional(),
     facilities: facilitiesSchema.optional(),
     landmark: optionalText(255, 'Patokan'),
     mainMenu: contributionDraftMainMenuSchema.optional(),
     mapsUrl: contributionMapsUrlSchema.optional(),
+    maximumUsefulBudget: contributionRupiahSchema.optional(),
     notes: optionalText(1_000, 'Catatan'),
     operatingHours: operatingHoursSchema.optional(),
     placeName: optionalText(180, 'Nama tempat'),
+    priceRange: contributionPriceRangeSchema.optional(),
   })
   .strict() satisfies z.ZodType<ContributionDraftPayload>;
 
@@ -206,11 +225,11 @@ function validateStepTwo(payload: ContributionDraftPayload, context: z.Refinemen
         message: 'Menu termurah dan harganya wajib diisi untuk kategori ini.',
       });
     }
-  } else if (payload.mainMenu) {
+  } else if (payload.mainMenu || payload.maximumUsefulBudget || payload.priceRange) {
     context.addIssue({
       code: 'custom',
       path: ['mainMenu'],
-      message: 'Data menu tidak berlaku untuk kategori ini.',
+      message: 'Data menu dan harga tidak berlaku untuk kategori ini.',
     });
   }
 }
@@ -291,6 +310,7 @@ export function redactContributionPayload(
   return {
     category: payload.category,
     address: payload.address ? '[REDACTED]' : undefined,
+    area: payload.area ? '[REDACTED]' : undefined,
     landmark: payload.landmark ? '[REDACTED]' : undefined,
     mapsUrl: payload.mapsUrl ? '[REDACTED]' : undefined,
     notes: payload.notes ? '[REDACTED]' : undefined,
@@ -298,6 +318,8 @@ export function redactContributionPayload(
     mainMenu: payload.mainMenu
       ? { name: '[REDACTED]', priceAmount: payload.mainMenu.priceAmount }
       : undefined,
+    maximumUsefulBudget: payload.maximumUsefulBudget,
+    priceRange: payload.priceRange,
     facilityCount: payload.facilities?.length ?? 0,
     operatingHourCount: payload.operatingHours?.length ?? 0,
   };

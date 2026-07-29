@@ -9,6 +9,7 @@ import {
   Home,
   LayoutDashboard,
   Menu,
+  RefreshCw,
   ShieldCheck,
   UserRound,
 } from 'lucide-react';
@@ -87,11 +88,18 @@ export function MobileBottomNavigation({
   );
 }
 
-export type AdminNavigationValue = 'dashboard' | 'moderation' | 'places' | 'reports';
+export type AdminNavigationValue =
+  'dashboard' | 'integrations' | 'moderation' | 'places' | 'reports';
 
 const adminItems = [
   { href: '/', icon: LayoutDashboard, label: 'Dashboard', value: 'dashboard' },
   { href: '/contributions', icon: ShieldCheck, label: 'Moderasi', value: 'moderation' },
+  {
+    href: '/integrations/google-form',
+    icon: RefreshCw,
+    label: 'Sinkronisasi Form',
+    value: 'integrations',
+  },
 ] as const;
 
 export function AdminSidebar({

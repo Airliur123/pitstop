@@ -61,8 +61,25 @@ export const confirmationTypeValues = [
 ] as const;
 export const integrationProcessingStatusValues = [
   'RECEIVED',
+  'QUEUED',
   'PROCESSING',
-  'PROCESSED',
+  'COMPLETED',
+  'RETRYABLE_FAILURE',
+  'DEAD_LETTER',
+  'REJECTED_INVALID',
+] as const;
+export const integrationStageStatusValues = [
+  'PENDING',
+  'PROCESSING',
+  'SUCCEEDED',
+  'LOW_CONFIDENCE',
+  'FAILED',
+  'SKIPPED',
+] as const;
+export const geocodingResultStatusValues = [
+  'SUCCEEDED',
+  'LOW_CONFIDENCE',
+  'NOT_FOUND',
   'FAILED',
 ] as const;
 

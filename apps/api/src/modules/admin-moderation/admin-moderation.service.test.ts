@@ -29,6 +29,7 @@ const contribution: AdminContributionDetail = {
   },
   contributor: null,
   decisionReason: null,
+  duplicateHints: [],
   history: [],
   id: '01K00000000000000000000002',
   mergedAt: null,

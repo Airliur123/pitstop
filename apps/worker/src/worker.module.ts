@@ -3,6 +3,15 @@ import { parseWorkerEnvironment } from '@pitstop/config';
 import { LoggerModule } from 'nestjs-pino';
 
 import { WORKER_ENVIRONMENT } from './configuration';
+import { ConfiguredGeocodingAdapter } from './geocoding.adapters';
+import { GEOCODING_PORT } from './geocoding.port';
+import { IntegrationJobService } from './integration-job.service';
+import { IntegrationWorkerRepository } from './integration-worker.repository';
+import {
+  createWorkerDatabasePool,
+  WORKER_DATABASE_POOL,
+  WorkerDatabaseLifecycle,
+} from './worker-database';
 import { WorkerLifecycleService } from './worker-lifecycle.service';
 
 @Module({
@@ -12,6 +21,18 @@ import { WorkerLifecycleService } from './worker-lifecycle.service';
       provide: WORKER_ENVIRONMENT,
       useFactory: () => parseWorkerEnvironment(process.env),
     },
+    {
+      provide: WORKER_DATABASE_POOL,
+      inject: [WORKER_ENVIRONMENT],
+      useFactory: createWorkerDatabasePool,
+    },
+    {
+      provide: GEOCODING_PORT,
+      useClass: ConfiguredGeocodingAdapter,
+    },
+    IntegrationWorkerRepository,
+    IntegrationJobService,
+    WorkerDatabaseLifecycle,
     WorkerLifecycleService,
   ],
 })
