@@ -8,6 +8,9 @@ Phase 8 coverage is split by boundary:
   payload rejection, idempotent inputs, and post-commit cache invalidation;
 - admin component tests cover status-valid actions, reviewer protection, accessible reason errors,
   optimistic version submission, idempotency keys, and explicit publication confirmation;
+- admin proxy regression tests model separate `admin.example.test` and `api.example.test` hosts,
+  covering the host-only session, claim/approve/merge, logout cookie deletion, unauthenticated 401,
+  invalid CSRF origin, header allowlisting, and fixed upstream route selection;
 - MySQL/Redis/Mailpit API integration covers 401/403, admin CSRF, queue search, claim/reclaim,
   optimistic conflict, approval without Place creation, transactional merge, audit history,
   exact replay, double merge, and public Place visibility;

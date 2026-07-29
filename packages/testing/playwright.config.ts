@@ -54,6 +54,7 @@ export default defineConfig({
     {
       command: 'pnpm --filter @pitstop/admin exec next dev --port 3101',
       env: {
+        ADMIN_BASE_URL: 'http://localhost:3101',
         NEXT_PUBLIC_API_BASE_URL: 'http://localhost:3102/api/v1',
         NEXT_PUBLIC_ENABLE_UI_CATALOG: 'true',
         PITSTOP_E2E: 'true',

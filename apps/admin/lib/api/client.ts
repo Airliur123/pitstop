@@ -2,6 +2,7 @@ import type { MergeContributionResult, ModerationMutationResult } from '@pitstop
 import type { z } from 'zod';
 
 import {
+  logoutResponseSchema,
   magicLinkRequestResponseSchema,
   mergeMutationResponseSchema,
   moderationMutationResponseSchema,
@@ -73,20 +74,31 @@ async function readResponse<T>(response: Response, schema: z.ZodType<T>): Promis
 }
 
 export async function requestMagicLink(email: string, signal?: AbortSignal): Promise<void> {
-  const response = await fetch(
-    `${normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL)}/auth/email/request`,
-    {
-      body: JSON.stringify({ email, returnTo: '/admin' }),
-      credentials: 'include',
-      headers: {
-        Accept: 'application/json, application/problem+json',
-        'Content-Type': 'application/json',
-      },
-      method: 'POST',
-      ...(signal ? { signal } : {}),
+  const response = await fetch('/api/auth/email/request', {
+    body: JSON.stringify({ email, returnTo: '/admin' }),
+    credentials: 'same-origin',
+    headers: {
+      Accept: 'application/json, application/problem+json',
+      'Content-Type': 'application/json',
     },
-  );
+    method: 'POST',
+    ...(signal ? { signal } : {}),
+  });
   await readResponse(response, magicLinkRequestResponseSchema);
+}
+
+export async function logoutAdmin(signal?: AbortSignal): Promise<void> {
+  const response = await fetch('/api/auth/logout', {
+    body: '{}',
+    credentials: 'same-origin',
+    headers: {
+      Accept: 'application/json, application/problem+json',
+      'Content-Type': 'application/json',
+    },
+    method: 'POST',
+    ...(signal ? { signal } : {}),
+  });
+  await readResponse(response, logoutResponseSchema);
 }
 
 export async function mutateContribution(
@@ -96,10 +108,10 @@ export async function mutateContribution(
   idempotencyKey: string,
 ): Promise<MergeContributionResult | ModerationMutationResult> {
   const response = await fetch(
-    `${normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL)}/admin/contributions/${encodeURIComponent(contributionId)}/${action}`,
+    `/api/admin/contributions/${encodeURIComponent(contributionId)}/${action}`,
     {
       body: JSON.stringify(body),
-      credentials: 'include',
+      credentials: 'same-origin',
       headers: {
         Accept: 'application/json, application/problem+json',
         'Content-Type': 'application/json',

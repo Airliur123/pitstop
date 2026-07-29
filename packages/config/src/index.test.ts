@@ -141,13 +141,34 @@ describe('web environment parser', () => {
 });
 
 describe('admin environment parser', () => {
-  it('rejects a localhost API URL in production', () => {
+  it('accepts separately hosted admin and API origins', () => {
+    const parsed = parseAdminEnvironment({
+      ADMIN_BASE_URL: 'https://admin.example.test',
+      ADMIN_PORT: '3001',
+      NEXT_PUBLIC_API_BASE_URL: 'https://api.example.test/api/v1',
+      NODE_ENV: 'production',
+    });
+
+    expect(parsed.ADMIN_BASE_URL).toBe('https://admin.example.test');
+    expect(parsed.NEXT_PUBLIC_API_BASE_URL).toBe('https://api.example.test/api/v1');
+  });
+
+  it('rejects localhost admin and API URLs in production', () => {
     expect(() =>
       parseAdminEnvironment({
+        ADMIN_BASE_URL: 'https://admin.example.test',
         ADMIN_PORT: '3001',
         NEXT_PUBLIC_API_BASE_URL: 'http://localhost:3002/api/v1',
         NODE_ENV: 'production',
       }),
     ).toThrow(/Production API base URL cannot use localhost/);
+    expect(() =>
+      parseAdminEnvironment({
+        ADMIN_BASE_URL: 'http://localhost:3001',
+        ADMIN_PORT: '3001',
+        NEXT_PUBLIC_API_BASE_URL: 'https://api.example.test/api/v1',
+        NODE_ENV: 'production',
+      }),
+    ).toThrow(/Production admin base URL cannot use localhost/);
   });
 });

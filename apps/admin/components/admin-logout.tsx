@@ -3,7 +3,7 @@
 import { Button } from '@pitstop/ui';
 import { useState } from 'react';
 
-import { normalizeApiBaseUrl } from '../lib/api/client';
+import { logoutAdmin } from '../lib/api/client';
 
 export function AdminLogout({ email }: Readonly<{ email: string }>) {
   const [pending, setPending] = useState(false);
@@ -14,19 +14,7 @@ export function AdminLogout({ email }: Readonly<{ email: string }>) {
     setPending(true);
     setError(null);
     try {
-      const response = await fetch(
-        `${normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL)}/auth/logout`,
-        {
-          body: '{}',
-          credentials: 'include',
-          headers: {
-            Accept: 'application/json, application/problem+json',
-            'Content-Type': 'application/json',
-          },
-          method: 'POST',
-        },
-      );
-      if (!response.ok) throw new Error('Logout failed');
+      await logoutAdmin();
       window.location.assign('/login');
     } catch {
       setError('Belum dapat keluar. Coba lagi.');

@@ -100,6 +100,7 @@ export const adminEnvironmentSchema = z
   .object({
     NODE_ENV: nodeEnvironmentSchema,
     ADMIN_PORT: portSchema,
+    ADMIN_BASE_URL: urlSchema.optional().default('http://localhost:3001'),
     NEXT_PUBLIC_API_BASE_URL: urlSchema,
     NEXT_PUBLIC_ENABLE_UI_CATALOG: booleanStringSchema.optional().default(false),
   })
@@ -112,6 +113,16 @@ export const adminEnvironmentSchema = z
         code: 'custom',
         path: ['NEXT_PUBLIC_API_BASE_URL'],
         message: 'Production API base URL cannot use localhost',
+      });
+    }
+    if (
+      environment.NODE_ENV === 'production' &&
+      isLocalHostname(new URL(environment.ADMIN_BASE_URL).hostname)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['ADMIN_BASE_URL'],
+        message: 'Production admin base URL cannot use localhost',
       });
     }
   });

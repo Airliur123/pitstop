@@ -107,6 +107,7 @@ async function magicToken(request: APIRequestContext, email: string): Promise<st
 }
 
 test('@admin-core administrator reviews and publishes a contribution with accessible dialogs', async ({
+  context,
   page,
   request,
 }) => {
@@ -201,4 +202,14 @@ test('@admin-core administrator reviews and publishes a contribution with access
       (violation) => violation.impact === 'critical' || violation.impact === 'serious',
     ),
   ).toEqual([]);
+
+  await page.getByRole('button', { name: 'Keluar' }).click();
+  await expect(page).toHaveURL(`${adminBaseUrl}/login`);
+  await expect
+    .poll(async () =>
+      (await context.cookies(adminBaseUrl)).some((cookie) => cookie.name === 'pitstop_session'),
+    )
+    .toBe(false);
+  await page.goto(`${adminBaseUrl}/`);
+  await expect(page).toHaveURL(`${adminBaseUrl}/login`);
 });

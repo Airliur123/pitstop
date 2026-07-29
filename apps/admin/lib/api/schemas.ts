@@ -47,6 +47,10 @@ export const magicLinkRequestResponseSchema = successSchema(
   z.object({ accepted: z.literal(true) }).strict(),
 );
 
+export const logoutResponseSchema = successSchema(
+  z.object({ authenticated: z.literal(false) }).strict(),
+);
+
 export const magicLinkVerificationResponseSchema = successSchema(
   z
     .object({
