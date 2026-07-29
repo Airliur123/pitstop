@@ -31,4 +31,5 @@ export const healthStatusSchema = z.enum(['ok', 'ready', 'not_ready']);
 export * from './admin-moderation';
 export * from './auth';
 export * from './contributions';
+export * from './integrations';
 export * from './public-api';

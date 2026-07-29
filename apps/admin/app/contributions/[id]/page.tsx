@@ -84,6 +84,7 @@ export default async function ContributionDetailPage({
                 value={payload.category ? categoryLabels[payload.category] : undefined}
               />
               <Detail className="sm:col-span-2" label="Alamat" value={payload.address} />
+              <Detail label="Wilayah/area" value={payload.area} />
               <Detail label="Patokan" value={payload.landmark} />
               <Detail
                 label="Menu utama"
@@ -91,6 +92,22 @@ export default async function ContributionDetailPage({
                   payload.mainMenu?.name
                     ? `${payload.mainMenu.name} · ${formatMoney(payload.mainMenu.priceAmount)}`
                     : undefined
+                }
+              />
+              <Detail
+                label="Kisaran harga"
+                value={
+                  payload.priceRange
+                    ? `${formatMoney(payload.priceRange.minimum)}–${formatMoney(
+                        payload.priceRange.maximum,
+                      )}`
+                    : undefined
+                }
+              />
+              <Detail
+                label="Budget maksimum relevan"
+                value={
+                  payload.maximumUsefulBudget ? formatMoney(payload.maximumUsefulBudget) : undefined
                 }
               />
               <Detail className="sm:col-span-2" label="Catatan" value={payload.notes} />
@@ -241,6 +258,29 @@ export default async function ContributionDetailPage({
                   Place {contribution.mergedPlaceId}
                 </Badge>
               ) : null}
+            </Card>
+          ) : null}
+
+          {contribution.duplicateHints.length > 0 ? (
+            <Card>
+              <SectionHeader
+                description="Petunjuk worker untuk keputusan manusia; tidak ada merge atau reject otomatis."
+                title="Kandidat duplikat"
+              />
+              <ol className="mt-5 space-y-4">
+                {contribution.duplicateHints.map((hint) => (
+                  <li
+                    className="rounded-button border border-border p-3"
+                    key={hint.candidatePlaceId}
+                  >
+                    <p className="font-semibold">Place {hint.candidatePlaceId}</p>
+                    <p className="mt-1 text-sm text-muted">
+                      {hint.distanceMeters} m · skor {Math.round(hint.score * 100)}%
+                    </p>
+                    <p className="mt-1 text-xs text-muted">{hint.matchedSignals.join(' · ')}</p>
+                  </li>
+                ))}
+              </ol>
             </Card>
           ) : null}
 

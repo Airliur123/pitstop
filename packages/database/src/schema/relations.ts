@@ -17,7 +17,12 @@ import {
   userRoles,
   users,
 } from './identity';
-import { geocodingResults, googleFormSubmissions, integrationSources } from './integrations';
+import {
+  duplicatePlaceHints,
+  geocodingResults,
+  googleFormSubmissions,
+  integrationSources,
+} from './integrations';
 import {
   categories,
   facilities,
@@ -95,6 +100,7 @@ export const placesRelations = relations(places, ({ many, one }) => ({
   confirmations: many(placeConfirmations),
   reports: many(placeReports),
   geocodingResults: many(geocodingResults),
+  duplicateHints: many(duplicatePlaceHints),
   changeHistory: many(placeChangeHistory),
 }));
 export const categoriesRelations = relations(categories, ({ many }) => ({
@@ -151,6 +157,7 @@ export const contributionsRelations = relations(contributions, ({ many, one }) =
   moderationEvents: many(moderationEvents),
   geocodingResults: many(geocodingResults),
   googleFormSubmissions: many(googleFormSubmissions),
+  duplicateHints: many(duplicatePlaceHints),
 }));
 export const contributionPayloadsRelations = relations(contributionPayloads, ({ one }) => ({
   contribution: one(contributions, {
@@ -223,6 +230,20 @@ export const googleFormSubmissionsRelations = relations(googleFormSubmissions, (
   contribution: one(contributions, {
     fields: [googleFormSubmissions.contributionId],
     references: [contributions.id],
+  }),
+}));
+export const duplicatePlaceHintsRelations = relations(duplicatePlaceHints, ({ one }) => ({
+  contribution: one(contributions, {
+    fields: [duplicatePlaceHints.contributionId],
+    references: [contributions.id],
+  }),
+  submission: one(googleFormSubmissions, {
+    fields: [duplicatePlaceHints.googleFormSubmissionId],
+    references: [googleFormSubmissions.id],
+  }),
+  candidatePlace: one(places, {
+    fields: [duplicatePlaceHints.candidatePlaceId],
+    references: [places.id],
   }),
 }));
 export const geocodingResultsRelations = relations(geocodingResults, ({ one }) => ({

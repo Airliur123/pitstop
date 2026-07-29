@@ -11,6 +11,6 @@ Set `API_SWAGGER_ENABLED=true` to expose:
 The default is disabled unless explicitly configured; `.env.example` enables it for local
 development. Production must opt in. No secret is required.
 
-The API integration contract test asserts that JSON contains categories, places search, slug detail,
-and recommendation routes. The document is generated deterministically from the current controllers;
-no generated artifact is tracked.
+The API integration contract test asserts that JSON contains public, authentication, contribution,
+moderation, signed Google Form ingestion, and private integration-operation routes. The document is
+generated deterministically from the current controllers; no generated artifact is tracked.

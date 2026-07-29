@@ -60,4 +60,5 @@ export interface PaginationMeta extends PaginationRequest {
 export * from './admin-moderation';
 export * from './auth';
 export * from './contributions';
+export * from './integrations';
 export * from './public-api';

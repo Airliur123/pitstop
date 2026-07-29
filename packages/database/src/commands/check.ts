@@ -23,6 +23,13 @@ interface ModerationMetadataRow extends RowDataPacket {
   readonly verifiedSrid: number;
 }
 
+interface IntegrationMetadataRow extends RowDataPacket {
+  readonly hintTableCount: number;
+  readonly inboxColumnCount: number;
+  readonly integrationIndexCount: number;
+  readonly resultSrid: number;
+}
+
 loadWorkspaceEnvironment(fileURLToPath(new URL('../../../../', import.meta.url)));
 const pool = createDatabasePool(createDatabaseConnectionConfig(process.env));
 
@@ -33,7 +40,7 @@ try {
      WHERE table_schema = DATABASE() AND table_name <> '__drizzle_migrations'`,
   );
   const tableCount = Number(tableRows[0]?.count ?? 0);
-  if (tableCount !== 30) throw new Error(`Expected 30 domain tables, found ${tableCount}`);
+  if (tableCount !== 31) throw new Error(`Expected 31 domain tables, found ${tableCount}`);
 
   const [metadataRows] = await pool.query<PlaceMetadataRow[]>(
     `SELECT t.engine AS engineValue, t.table_collation AS tableCollation,
@@ -96,6 +103,42 @@ try {
     throw new Error('Phase 8 moderation schema metadata is incomplete');
   }
 
+  const [integrationRows] = await pool.query<IntegrationMetadataRow[]>(
+    `SELECT
+       (SELECT COUNT(*) FROM information_schema.tables
+        WHERE table_schema = DATABASE() AND table_name = 'duplicate_place_hints')
+         AS hintTableCount,
+       (SELECT COUNT(*) FROM information_schema.columns
+        WHERE table_schema = DATABASE() AND table_name = 'google_form_submissions'
+          AND column_name IN (
+            'payload_schema_version', 'request_hash', 'accepted_key_id', 'correlation_id',
+            'submitted_at', 'queued_at', 'attempt_count', 'last_error_class',
+            'last_error_code', 'geocoding_status', 'duplicate_detection_status',
+            'created_at', 'updated_at'
+          )) AS inboxColumnCount,
+       (SELECT COUNT(DISTINCT index_name) FROM information_schema.statistics
+        WHERE table_schema = DATABASE()
+          AND index_name IN (
+            'uq_google_form_source_external', 'idx_google_form_status_received',
+            'idx_google_form_contribution', 'uq_geocoding_contribution',
+            'idx_duplicate_hint_submission', 'idx_duplicate_hint_candidate',
+            'uq_duplicate_hint_contribution_place'
+          )) AS integrationIndexCount,
+       (SELECT srs_id FROM information_schema.st_geometry_columns
+        WHERE table_schema = DATABASE() AND table_name = 'geocoding_results'
+          AND column_name = 'result_location') AS resultSrid`,
+  );
+  const integration = integrationRows[0];
+  if (
+    !integration ||
+    Number(integration.hintTableCount) !== 1 ||
+    Number(integration.inboxColumnCount) !== 13 ||
+    Number(integration.integrationIndexCount) !== 7 ||
+    Number(integration.resultSrid) !== 4326
+  ) {
+    throw new Error('Phase 9 integration schema metadata is incomplete');
+  }
+
   process.stdout.write(
     `Database check passed: ${JSON.stringify({
       tableCount,
@@ -104,6 +147,7 @@ try {
       srid: Number(metadata.srsId),
       spatialIndex: metadata.indexType,
       moderationIndexes: Number(moderation.indexCount),
+      integrationIndexes: Number(integration.integrationIndexCount),
       verifiedLocationSrid: Number(moderation.verifiedSrid),
     })}\n`,
   );

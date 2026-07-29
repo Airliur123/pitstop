@@ -21,3 +21,12 @@ Public GET access is Guest First, not an authorization bypass for mutation. Phas
 routes use session ownership filters, Origin/Referer CSRF checks, optimistic versions, idempotency,
 strict payload validation, private no-store responses, contributor-data log redaction, and
 fail-closed Redis mutation limits. See [contributions.md](./contributions.md).
+
+The Google Form ingress is a non-cookie integration boundary: HMAC-SHA256 authenticates canonical
+body, UTC timestamp, external submission ID, and source ID. It has a bounded replay window,
+current/previous source-scoped keys, constant-time comparison, JSON/body limits, and source/IP
+fail-closed rate limiting. It neither uses Origin as authentication nor applies session CSRF.
+ADMIN integration reads/replay remain cookie-authenticated with RBAC, and replay additionally uses
+the existing Origin/Referer CSRF guard. Secrets, signatures, payloads, optional email, and precise
+geocoding results are excluded or redacted from logs. See
+[the integration runbook](../integrations/google-form.md).

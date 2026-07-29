@@ -11,6 +11,7 @@ describe('worker bootstrap', () => {
     Object.assign(process.env, {
       NODE_ENV: 'test',
       LOG_LEVEL: 'silent',
+      DATABASE_URL: 'mysql://pitstop:pitstop@localhost:3306/pitstop',
       REDIS_URL: 'redis://localhost:6379',
     });
 

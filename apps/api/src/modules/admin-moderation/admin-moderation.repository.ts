@@ -99,6 +99,13 @@ interface EventRow extends RowDataPacket {
   readonly reason: string | null;
 }
 
+interface DuplicateHintRow extends RowDataPacket {
+  readonly candidate_place_id: string;
+  readonly distance_meters: number;
+  readonly hint_score: number | string;
+  readonly matched_signals: unknown;
+}
+
 interface LockRow extends RowDataPacket {
   readonly approved_at: Date | string | null;
   readonly contribution_status: ContributionStatus;
@@ -780,8 +787,11 @@ export class AdminModerationRepository {
     );
     const row = rows[0];
     if (!row) return null;
-    const history = await this.findEvents(executor, contributionId);
-    return mapDetailRow(row, history);
+    const [history, duplicateHints] = await Promise.all([
+      this.findEvents(executor, contributionId),
+      this.findDuplicateHints(executor, contributionId),
+    ]);
+    return mapDetailRow(row, history, duplicateHints);
   }
 
   private async requiredDetail(
@@ -808,6 +818,25 @@ export class AdminModerationRepository {
       [contributionId],
     );
     return rows.map(mapEventRow);
+  }
+
+  private async findDuplicateHints(
+    executor: Pick<Pool, 'execute'> | Pick<PoolConnection, 'execute'>,
+    contributionId: string,
+  ): Promise<AdminContributionDetail['duplicateHints']> {
+    const [rows] = await executor.execute<DuplicateHintRow[]>(
+      `SELECT candidate_place_id, distance_meters, matched_signals, hint_score
+       FROM duplicate_place_hints
+       WHERE contribution_id = ?
+       ORDER BY hint_score DESC, distance_meters ASC`,
+      [contributionId],
+    );
+    return rows.map((row) => ({
+      candidatePlaceId: row.candidate_place_id,
+      distanceMeters: Number(row.distance_meters),
+      matchedSignals: parseStringArray(row.matched_signals),
+      score: Number(row.hint_score),
+    }));
   }
 
   private async findRecentEvents(
@@ -959,6 +988,7 @@ function mapReviewer(row: QueueRow): AdminReviewer | null {
 function mapDetailRow(
   row: DetailRow,
   history: readonly ModerationHistoryEvent[],
+  duplicateHints: AdminContributionDetail['duplicateHints'],
 ): AdminContributionDetail {
   const payload = contributionSubmissionSchema.parse(parseJson(row.payload));
   const target =
@@ -991,6 +1021,7 @@ function mapDetailRow(
         ? { email: maskEmail(row.contributor_email), id: row.contributor_id }
         : null,
     decisionReason: row.decision_reason,
+    duplicateHints,
     history,
     id: row.id,
     mergedAt: nullableIsoDate(row.merged_at),
@@ -1004,6 +1035,13 @@ function mapDetailRow(
     verifiedLocation,
     version: Number(row.version),
   };
+}
+
+function parseStringArray(value: unknown): string[] {
+  const parsed = typeof value === 'string' ? (JSON.parse(value) as unknown) : value;
+  return Array.isArray(parsed)
+    ? parsed.filter((item): item is string => typeof item === 'string')
+    : [];
 }
 
 function mapEventRow(row: EventRow): ModerationHistoryEvent {

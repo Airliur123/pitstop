@@ -67,7 +67,11 @@ export class ApiExceptionFilter implements ExceptionFilter {
     };
 
     const requestPath = request.url.split('?')[0] ?? request.url;
-    if (requestPath.includes('/auth/') || requestPath.includes('/contributions')) {
+    if (
+      requestPath.includes('/auth/') ||
+      requestPath.includes('/contributions') ||
+      requestPath.includes('/integrations/')
+    ) {
       reply.header('cache-control', 'no-store, private').header('pragma', 'no-cache');
     }
     reply

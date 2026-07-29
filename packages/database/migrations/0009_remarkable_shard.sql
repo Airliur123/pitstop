@@ -1,0 +1,1 @@
+ALTER TABLE `geocoding_results` ADD CONSTRAINT `uq_geocoding_contribution` UNIQUE(`contribution_id`);

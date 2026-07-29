@@ -1,0 +1,19 @@
+{
+  "description": "Public non-secret interoperability test vector for Apps Script and Node.",
+  "sourceId": "google-form-main",
+  "externalSubmissionId": "form-response-0001",
+  "timestamp": "2026-07-29T10:01:00.000Z",
+  "keyMaterial": "fixture-google-form-secret-0123456789012345",
+  "canonicalBody": "{\"payload\":{\"address\":\"Jl. Contoh 1\",\"area\":\"Tambora\",\"category\":\"MAKAN_MURAH\",\"cheapestMenuName\":\"Nasi telur\",\"cheapestMenuPrice\":12000,\"maximumUsefulBudget\":15000,\"placeName\":\"Warung Contoh\"},\"schemaVersion\":1,\"submittedAt\":\"2026-07-29T10:00:00.000Z\"}",
+  "signature": "913a34dba5e97cc858b65280d703482df98296e435ced66bdf25c911a44805d0",
+  "stableIdPolicy": "Persist a generated UUID in the PitStop Submission ID control column and reuse it.",
+  "retryPolicy": {
+    "attempts": 5,
+    "initialBackoffMs": 1000,
+    "deadlineMs": 90000
+  },
+  "formulaSafeExamples": {
+    "+CMD": "'+CMD",
+    "DITERIMA": "DITERIMA"
+  }
+}

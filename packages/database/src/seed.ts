@@ -70,7 +70,7 @@ const facilities = [
   { code: 'WIFI', name: 'Wi-Fi' },
 ] as const;
 
-const integrationSources = [{ code: 'GOOGLE_FORM', name: 'Google Form' }] as const;
+const integrationSources = [{ code: 'google-form-main', name: 'Google Form' }] as const;
 
 function dailySchedule(opensAt: string, closesAt: string): readonly SeedSchedule[] {
   return Array.from({ length: 7 }, (_, dayOfWeek) => ({
@@ -238,8 +238,10 @@ async function seedFacilities(connection: PoolConnection): Promise<void> {
 async function seedIntegrationSources(connection: PoolConnection): Promise<void> {
   for (const source of integrationSources) {
     await connection.execute(
-      `INSERT INTO integration_sources (id, code, name, is_active)
-       VALUES (?, ?, ?, true)
+      `INSERT INTO integration_sources (
+         id, code, name, is_active, current_key_id,
+         replay_window_seconds, rate_limit_window_seconds, rate_limit_maximum
+       ) VALUES (?, ?, ?, true, 'seed-unconfigured', 300, 60, 120)
        ON DUPLICATE KEY UPDATE name = VALUES(name), is_active = true`,
       [createUlid(), source.code, source.name],
     );

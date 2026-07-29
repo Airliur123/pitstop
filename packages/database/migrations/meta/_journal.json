@@ -57,6 +57,20 @@
       "when": 1785305368065,
       "tag": "0007_overjoyed_sphinx",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1785324724987,
+      "tag": "0008_bizarre_korg",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1785325682767,
+      "tag": "0009_remarkable_shard",
+      "breakpoints": true
     }
   ]
 }

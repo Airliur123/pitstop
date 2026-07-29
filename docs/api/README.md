@@ -27,6 +27,16 @@ Phase 7 adds authenticated contribution drafts under `/api/v1/contributions`:
 | PATCH  | `/contributions/:id`        | Update a draft with optimistic version |
 | POST   | `/contributions/:id/submit` | Idempotently transition to `PENDING`   |
 
+Phase 9 adds a signed durable Google Form inbox and ADMIN-only operations:
+
+| Method | Route                                                    | Purpose                     |
+| ------ | -------------------------------------------------------- | --------------------------- |
+| POST   | `/integrations/google-form/submissions`                  | Commit signed submission    |
+| GET    | `/admin/integrations/google-form/status`                 | Read safe sync status       |
+| GET    | `/admin/integrations/google-form/submissions`            | List redacted inbox rows    |
+| GET    | `/admin/integrations/google-form/submissions/:id`        | Read bounded inbox detail   |
+| POST   | `/admin/integrations/google-form/submissions/:id/replay` | Audit and replay failed row |
+
 Health remains at `/health/live` and `/health/ready`. Swagger UI is `/api/docs` and JSON is
 `/api/openapi.json` when `API_SWAGGER_ENABLED=true`.
 
@@ -55,5 +65,6 @@ used here to keep the guest security/rate-limit boundary unambiguous. This route
 documented rather than silently treated as equivalent.
 
 See the endpoint, error, pagination, cache, rate-limit, OpenAPI, testing, and security documents in
-this directory, plus [the Phase 6 authentication guide](../authentication/README.md) and
-[contribution API guide](./contributions.md).
+this directory, plus [the Phase 6 authentication guide](../authentication/README.md),
+[contribution API guide](./contributions.md), and
+[Google Form integration runbook](../integrations/google-form.md).
