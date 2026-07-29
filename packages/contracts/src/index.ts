@@ -57,6 +57,7 @@ export interface PaginationMeta extends PaginationRequest {
   readonly totalPages: number;
 }
 
+export * from './admin-moderation';
 export * from './auth';
 export * from './contributions';
 export * from './public-api';

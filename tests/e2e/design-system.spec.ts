@@ -4,11 +4,12 @@ import { expect, test } from '@playwright/test';
 const routes = [
   'http://localhost:3100/',
   'http://localhost:3100/dev/ui',
-  'http://localhost:3101/',
-  'http://localhost:3101/dev/ui',
+  'http://localhost:3101/login',
 ] as const;
 
-test('web and admin shells render without horizontal overflow', async ({ page }) => {
+test('web surfaces and the admin entry surface render without horizontal overflow', async ({
+  page,
+}) => {
   for (const route of routes) {
     await page.goto(route);
     await expect(page.locator('main')).toBeVisible();
@@ -30,12 +31,14 @@ test('focus indicators and primary navigation are keyboard-visible', async ({ pa
   const activityFocus = await activity.evaluate((element) => getComputedStyle(element).boxShadow);
   expect(activityFocus).not.toBe('none');
 
-  await page.goto('http://localhost:3101/');
-  const dashboard = page.getByRole('link', { name: 'Dashboard' });
-  await dashboard.focus();
-  await expect(dashboard).toBeFocused();
-  const dashboardFocus = await dashboard.evaluate((element) => getComputedStyle(element).boxShadow);
-  expect(dashboardFocus).not.toBe('none');
+  await page.goto('http://localhost:3101/login');
+  const adminLogin = page.getByRole('button', { name: 'Kirim tautan masuk' });
+  await adminLogin.focus();
+  await expect(adminLogin).toBeFocused();
+  const adminLoginFocus = await adminLogin.evaluate(
+    (element) => getComputedStyle(element).boxShadow,
+  );
+  expect(adminLoginFocus).not.toBe('none');
 });
 
 test('catalog dialog opens, closes with Escape, and restores focus', async ({ page }) => {

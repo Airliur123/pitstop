@@ -3,9 +3,9 @@
 Transaction helpers use a dedicated `mysql2` pool connection, `BEGIN`, row locks, explicit commit,
 and rollback on every thrown error.
 
-## Approve contribution
+## Phase 1 approval foundation
 
-`approveContributionTransaction` performs:
+`approveContributionTransaction` is the original Phase 1 data-layer foundation. It performs:
 
 1. `SELECT ... FOR UPDATE` on the contribution.
 2. Status validation (`PENDING` or `IN_REVIEW`).
@@ -33,4 +33,17 @@ versions are rejected before mutation.
 every active token revoked in one transaction. Existing revocations are preserved, making repeated
 calls idempotent.
 
-These helpers are database foundations only. They are not exposed through API endpoints in Phase 1.
+These helpers are database foundations only. They were not exposed through API endpoints in
+Phase 1.
+
+## Phase 8 moderation and publication
+
+The active admin workflow intentionally supersedes the foundation helper at the API boundary:
+approval only stores canonical review output, a verified SRID 4326 location, and an explicit
+create/merge target. It does **not** write a Place.
+
+`AdminModerationRepository.merge` uses a dedicated connection, locks the approved contribution and
+optional target Place, maps canonical category/menu/facility/hour data, appends Place governance
+and moderation audit rows, transitions the contribution to `MERGED`, completes the idempotency
+record, and commits. Every exception rolls the full unit back. Cache invalidation is a post-commit
+side effect and cannot create a partially published database state.

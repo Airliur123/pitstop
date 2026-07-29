@@ -4,6 +4,7 @@ import {
   contributionPayloads,
   contributionPhotos,
   contributions,
+  moderationEvents,
   moderationReviews,
 } from './contributions';
 import { auditLogs, placeChangeHistory } from './governance';
@@ -39,6 +40,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(authSessions),
   contributions: many(contributions),
   moderationReviews: many(moderationReviews),
+  moderationEvents: many(moderationEvents),
   confirmations: many(placeConfirmations),
   reports: many(placeReports, { relationName: 'reportAuthor' }),
   reviewedReports: many(placeReports, { relationName: 'reportReviewer' }),
@@ -146,6 +148,7 @@ export const contributionsRelations = relations(contributions, ({ many, one }) =
   payload: one(contributionPayloads),
   photos: many(contributionPhotos),
   reviews: many(moderationReviews),
+  moderationEvents: many(moderationEvents),
   geocodingResults: many(geocodingResults),
   googleFormSubmissions: many(googleFormSubmissions),
 }));
@@ -169,6 +172,20 @@ export const moderationReviewsRelations = relations(moderationReviews, ({ one })
   reviewer: one(users, { fields: [moderationReviews.reviewerId], references: [users.id] }),
   duplicatePlace: one(places, {
     fields: [moderationReviews.duplicatePlaceId],
+    references: [places.id],
+  }),
+}));
+export const moderationEventsRelations = relations(moderationEvents, ({ one }) => ({
+  contribution: one(contributions, {
+    fields: [moderationEvents.contributionId],
+    references: [contributions.id],
+  }),
+  actor: one(users, {
+    fields: [moderationEvents.actorAdminId],
+    references: [users.id],
+  }),
+  mergedPlace: one(places, {
+    fields: [moderationEvents.mergedPlaceId],
     references: [places.id],
   }),
 }));

@@ -16,13 +16,14 @@ export interface DatabaseConnectionConfig {
   readonly uri: string;
   readonly connectionLimit: number;
   readonly enableKeepAlive: true;
+  readonly timezone: 'Z';
 }
 
 export function createDatabaseConnectionConfig(
   environment: NodeJS.ProcessEnv,
 ): DatabaseConnectionConfig {
   const { DATABASE_URL } = parseDatabaseEnvironment(environment);
-  return { uri: DATABASE_URL, connectionLimit: 10, enableKeepAlive: true };
+  return { uri: DATABASE_URL, connectionLimit: 10, enableKeepAlive: true, timezone: 'Z' };
 }
 
 export function createDatabasePool(config: DatabaseConnectionConfig): Pool {
@@ -30,6 +31,7 @@ export function createDatabasePool(config: DatabaseConnectionConfig): Pool {
     uri: config.uri,
     connectionLimit: config.connectionLimit,
     enableKeepAlive: config.enableKeepAlive,
+    timezone: config.timezone,
   };
   return createPool(poolOptions);
 }

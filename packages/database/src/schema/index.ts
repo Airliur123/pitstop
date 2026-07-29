@@ -12,6 +12,7 @@ import {
   contributionPayloads,
   contributionPhotos,
   contributions,
+  moderationEvents,
   moderationReviews,
 } from './contributions';
 import { auditLogs, placeChangeHistory } from './governance';
@@ -64,6 +65,7 @@ export const databaseSchema = {
   contributionPayloads,
   contributionPhotos,
   moderationReviews,
+  moderationEvents,
   placeConfirmations,
   placeReports,
   reportEvidence,

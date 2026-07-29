@@ -24,6 +24,18 @@ export class PublicCacheService {
     return { value: await loader(), status: 'BYPASS' };
   }
 
+  async invalidate(namespace: string, keyInput: unknown): Promise<boolean> {
+    if (!this.environment.REDIS_CACHE_ENABLED) return true;
+    const key = createCacheKey(namespace, keyInput);
+    const result = await this.redis.run((client) => client.del(key));
+    if (result === null) {
+      this.logger.warn({ cache: 'invalidation-failed', namespace });
+      return false;
+    }
+    this.logger.debug({ cache: 'invalidated', namespace });
+    return true;
+  }
+
   async remember<T>(
     namespace: string,
     keyInput: unknown,

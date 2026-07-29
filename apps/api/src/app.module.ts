@@ -12,6 +12,7 @@ import { API_ENVIRONMENT, type ApiEnvironmentProvider } from './configuration';
 import { ConfigurationModule } from './configuration.module';
 import { ApiExceptionFilter } from './http/api-exception.filter';
 import { RequestIdInterceptor } from './http/request-id.interceptor';
+import { AdminModerationModule } from './modules/admin-moderation/admin-moderation.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AUTH_LOG_REDACTION_PATHS } from './modules/auth/auth-security';
 import { CONTRIBUTION_LOG_REDACTION_PATHS } from './modules/contributions/contribution-security';
@@ -29,6 +30,7 @@ import { RecommendationsModule } from './modules/recommendations/recommendations
     RedisModule,
     CacheModule,
     AuthModule,
+    AdminModerationModule,
     ContributionsModule,
     PublicCategoriesModule,
     PublicPlacesModule,

@@ -40,10 +40,14 @@ describe('authentication guards', () => {
 
   it('accepts same-origin mutations and rejects absent or foreign origins', () => {
     const guard = new SessionCsrfGuard({
+      ADMIN_BASE_URL: 'http://localhost:3001',
       CORS_ALLOWED_ORIGINS: 'http://localhost:3000',
       WEB_BASE_URL: 'http://localhost:3000',
     } as ApiEnvironmentProvider);
     expect(guard.canActivate(httpContext({ headers: { origin: 'http://localhost:3000' } }))).toBe(
+      true,
+    );
+    expect(guard.canActivate(httpContext({ headers: { origin: 'http://localhost:3001' } }))).toBe(
       true,
     );
     expect(() =>

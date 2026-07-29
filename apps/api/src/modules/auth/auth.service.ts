@@ -48,7 +48,10 @@ export class AuthService {
       returnTo,
       tokenHash,
     });
-    const loginUrl = new URL('/auth/verify', this.environment.WEB_BASE_URL);
+    const loginUrl = new URL(
+      '/auth/verify',
+      returnTo === '/admin' ? this.environment.ADMIN_BASE_URL : this.environment.WEB_BASE_URL,
+    );
     loginUrl.searchParams.set('token', rawToken);
     try {
       await this.mailer.sendMagicLink({

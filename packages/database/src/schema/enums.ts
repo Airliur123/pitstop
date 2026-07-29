@@ -29,6 +29,14 @@ export const verificationStatusValues = [
 export const facilityStatusValues = ['AVAILABLE', 'NOT_AVAILABLE', 'UNKNOWN'] as const;
 export const authProviderValues = ['PASSWORD', 'GOOGLE'] as const;
 export const moderationDecisionValues = ['APPROVE', 'REJECT', 'REQUEST_REVISION', 'MERGE'] as const;
+export const moderationActionValues = [
+  'CLAIM',
+  'RECLAIM',
+  'NEEDS_REVISION',
+  'REJECT',
+  'APPROVE',
+  'MERGE',
+] as const;
 export const reportTypeValues = [
   'PRICE_CHANGED',
   'HOURS_CHANGED',
@@ -65,4 +73,5 @@ export type VerificationStatus = (typeof verificationStatusValues)[number];
 export type FacilityStatus = (typeof facilityStatusValues)[number];
 export type AuthProvider = (typeof authProviderValues)[number];
 export type ModerationDecision = (typeof moderationDecisionValues)[number];
+export type ModerationAction = (typeof moderationActionValues)[number];
 export type ReportType = (typeof reportTypeValues)[number];

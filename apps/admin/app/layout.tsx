@@ -5,7 +5,8 @@ import type { ReactNode } from 'react';
 
 export const metadata: Metadata = {
   title: 'PitStop Admin',
-  description: 'PitStop administration interface foundation.',
+  description: 'Dashboard moderasi kontribusi PitStop.',
+  robots: { follow: false, index: false },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

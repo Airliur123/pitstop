@@ -6,10 +6,8 @@ import {
   ChevronLeft,
   ChevronRight,
   CirclePlus,
-  FileText,
   Home,
   LayoutDashboard,
-  MapPinned,
   Menu,
   ShieldCheck,
   UserRound,
@@ -92,17 +90,16 @@ export function MobileBottomNavigation({
 export type AdminNavigationValue = 'dashboard' | 'moderation' | 'places' | 'reports';
 
 const adminItems = [
-  { href: '#dashboard', icon: LayoutDashboard, label: 'Dashboard', value: 'dashboard' },
-  { href: '#moderation', icon: ShieldCheck, label: 'Moderasi', value: 'moderation' },
-  { href: '#places', icon: MapPinned, label: 'Tempat aktif', value: 'places' },
-  { href: '#reports', icon: FileText, label: 'Laporan', value: 'reports' },
+  { href: '/', icon: LayoutDashboard, label: 'Dashboard', value: 'dashboard' },
+  { href: '/contributions', icon: ShieldCheck, label: 'Moderasi', value: 'moderation' },
 ] as const;
 
 export function AdminSidebar({
   current = 'dashboard',
-}: Readonly<{ current?: AdminNavigationValue }>) {
+  footer,
+}: Readonly<{ current?: AdminNavigationValue; footer?: ReactNode }>) {
   return (
-    <aside className="border-b border-white/10 bg-surface-navy px-5 py-5 text-inverse lg:sticky lg:top-0 lg:h-dvh lg:border-b-0 lg:py-7">
+    <aside className="border-b border-white/10 bg-surface-navy px-5 py-5 text-inverse lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col lg:border-b-0 lg:py-7">
       <div className="flex items-center justify-between gap-3">
         <strong className="text-[length:var(--pitstop-type-heading-h2-size)]">PitStop Admin</strong>
         <Menu aria-hidden="true" className="size-6 lg:hidden" />
@@ -127,6 +124,9 @@ export function AdminSidebar({
           );
         })}
       </nav>
+      {footer ? (
+        <div className="mt-5 border-t border-white/10 pt-5 lg:mt-auto">{footer}</div>
+      ) : null}
     </aside>
   );
 }
