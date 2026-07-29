@@ -155,8 +155,8 @@ export class WorkerLifecycleService implements OnModuleInit, OnApplicationShutdo
     try {
       const [processJobs, geocodeJobs, duplicateJobs] = await Promise.all([
         this.repository.findEnqueueCandidates(),
-        this.repository.findGeocodingCandidates(),
-        this.repository.findDuplicateCandidates(),
+        this.repository.claimGeocodingCandidates(this.environment.WORKER_STAGE_LEASE_SECONDS),
+        this.repository.claimDuplicateCandidates(this.environment.WORKER_STAGE_LEASE_SECONDS),
       ]);
       for (const job of processJobs) {
         await this.add('process-google-form-submission', job);

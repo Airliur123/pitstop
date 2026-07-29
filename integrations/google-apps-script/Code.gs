@@ -248,12 +248,75 @@ function parseOpeningHours_(value) {
 }
 
 function parseRupiah_(value) {
-  var digits = String(value).replace(/[^\d]/g, '');
-  var amount = Number(digits);
-  if (!Number.isSafeInteger(amount) || amount <= 0) {
-    throw new Error('Nilai rupiah harus berupa integer positif.');
+  if (typeof value === 'number') {
+    return assertSupportedRupiah_(value);
+  }
+  var normalized = String(value).trim();
+  if (/^[=+\-@]/.test(normalized)) {
+    throw new Error('Nilai rupiah tidak boleh berupa formula spreadsheet.');
+  }
+  var match = /^(?:Rp\s*)?(\d+|\d{1,3}(?:\.\d{3})+)$/i.exec(normalized);
+  if (!match) {
+    throw new Error('Format rupiah tidak valid. Gunakan 12000, 12.000, atau Rp 12.000.');
+  }
+  return assertSupportedRupiah_(Number(match[1].replace(/\./g, '')));
+}
+
+function assertSupportedRupiah_(amount) {
+  if (!Number.isSafeInteger(amount) || amount <= 0 || amount > 10000000) {
+    throw new Error('Nilai rupiah berada di luar batas yang didukung.');
   }
   return amount;
+}
+
+/**
+ * Manual parity check for the public fixture at fixtures/rupiah-v1.json.
+ * Run from the Apps Script editor after updating the template.
+ */
+function runPitStopRupiahParserSelfTest() {
+  var fixture = rupiahParityFixture_();
+  fixture.valid.forEach(function (sample) {
+    if (parseRupiah_(sample.input) !== sample.expected) {
+      throw new Error('Fixture rupiah valid tidak cocok: ' + JSON.stringify(sample.input));
+    }
+  });
+  fixture.invalid.forEach(function (sample) {
+    var rejected = false;
+    try {
+      parseRupiah_(sample.input);
+    } catch (error) {
+      rejected = true;
+    }
+    if (!rejected) {
+      throw new Error('Fixture rupiah invalid diterima: ' + JSON.stringify(sample.input));
+    }
+  });
+  return true;
+}
+
+function rupiahParityFixture_() {
+  return {
+    valid: [
+      { input: 12000, expected: 12000 },
+      { input: '12000', expected: 12000 },
+      { input: '12.000', expected: 12000 },
+      { input: 'Rp 12.000', expected: 12000 },
+      { input: 'Rp10000', expected: 10000 },
+      { input: '10.000.000', expected: 10000000 },
+    ],
+    invalid: [
+      { input: '-12000' },
+      { input: 12000.5 },
+      { input: '12.000,50' },
+      { input: '12,000.00' },
+      { input: '12rb' },
+      { input: '=12000' },
+      { input: '+12000' },
+      { input: '@12000' },
+      { input: '10000001' },
+      { input: '9007199254740993' },
+    ],
+  };
 }
 
 function putOptional_(target, key, value) {

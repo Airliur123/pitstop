@@ -45,7 +45,7 @@ export class GoogleFormService {
     },
   ): Promise<GoogleFormAcceptedSubmission> {
     this.assertContentType(request);
-    const canonicalBody = this.assertBodySize(body);
+    const canonicalBody = this.canonicalBody(body);
     let verified: VerifiedIntegrationRequest;
     try {
       verified = verifyIntegrationRequest({
@@ -182,10 +182,9 @@ export class GoogleFormService {
     }
   }
 
-  private assertBodySize(body: unknown): string {
-    let canonicalBody: string;
+  private canonicalBody(body: unknown): string {
     try {
-      canonicalBody = canonicalJson(body);
+      return canonicalJson(body);
     } catch {
       throw new ApiProblemException({
         status: 400,
@@ -194,15 +193,6 @@ export class GoogleFormService {
         detail: 'The request body must be a JSON object.',
       });
     }
-    if (Buffer.byteLength(canonicalBody, 'utf8') > this.environment.GOOGLE_FORM_BODY_LIMIT_BYTES) {
-      throw new ApiProblemException({
-        status: 413,
-        code: 'INTEGRATION_BODY_TOO_LARGE',
-        title: 'Integration body too large',
-        detail: 'The signed integration body exceeds the configured size limit.',
-      });
-    }
-    return canonicalBody;
   }
 
   private assertContentType(request: FastifyRequest): void {

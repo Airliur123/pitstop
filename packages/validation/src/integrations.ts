@@ -21,6 +21,8 @@ const sourceIdPattern = /^[a-z][a-z0-9-]{2,79}$/;
 const keyIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$/;
 const signaturePattern = /^[a-f0-9]{64}$/i;
 const formulaPrefixPattern = /^[=+\-@]/;
+const rupiahTextPattern = /^(?:Rp\s*)?(\d+|\d{1,3}(?:\.\d{3})+)$/i;
+const maximumSupportedRupiah = 10_000_000;
 
 function normalizedText(maximum: number, label: string) {
   return z
@@ -282,6 +284,19 @@ export function maskIntegrationEmail(value: string | undefined): string | null {
   return `${local.slice(0, 1)}***@${domain}`;
 }
 
+export function parseGoogleFormRupiah(value: unknown): number {
+  if (typeof value === 'number') return assertSupportedRupiah(value);
+  if (typeof value !== 'string') throw new TypeError('Nilai rupiah tidak valid.');
+  const normalized = value.trim();
+  if (formulaPrefixPattern.test(normalized)) {
+    throw new TypeError('Nilai rupiah tidak boleh berupa formula spreadsheet.');
+  }
+  const match = rupiahTextPattern.exec(normalized);
+  const amountText = match?.[1];
+  if (!amountText) throw new TypeError('Format rupiah tidak valid.');
+  return assertSupportedRupiah(Number(amountText.replaceAll('.', '')));
+}
+
 function validateCategoryPricing(
   payload: GoogleFormInboundPayload,
   context: z.RefinementCtx,
@@ -326,4 +341,11 @@ function hasUnsafeControlCharacter(value: string): boolean {
 function isUnsafeControlCharacter(character: string): boolean {
   const code = character.charCodeAt(0);
   return (code <= 31 && code !== 9 && code !== 10 && code !== 13) || code === 127;
+}
+
+function assertSupportedRupiah(value: number): number {
+  if (!Number.isSafeInteger(value) || value <= 0 || value > maximumSupportedRupiah) {
+    throw new TypeError('Nilai rupiah berada di luar batas yang didukung.');
+  }
+  return value;
 }

@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -8,6 +11,7 @@ import {
   isTimestampWithinReplayWindow,
   maskIntegrationEmail,
   normalizeGoogleFormText,
+  parseGoogleFormRupiah,
   sanitizeSpreadsheetCell,
 } from './integrations';
 
@@ -122,4 +126,31 @@ describe('Google Form canonical validation', () => {
     expect(maskIntegrationEmail('driver@example.com')).toBe('d***@example.com');
     expect(maskIntegrationEmail(undefined)).toBeNull();
   });
+
+  it('matches the strict Apps Script rupiah interoperability fixture', () => {
+    const fixture = JSON.parse(
+      readFileSync(
+        fileURLToPath(
+          new URL(
+            '../../../integrations/google-apps-script/fixtures/rupiah-v1.json',
+            import.meta.url,
+          ),
+        ),
+        'utf8',
+      ),
+    ) as RupiahFixture;
+    for (const sample of fixture.valid) {
+      expect(parseGoogleFormRupiah(sample.input), JSON.stringify(sample.input)).toBe(
+        sample.expected,
+      );
+    }
+    for (const sample of fixture.invalid) {
+      expect(() => parseGoogleFormRupiah(sample.input), JSON.stringify(sample.input)).toThrow();
+    }
+  });
 });
+
+interface RupiahFixture {
+  readonly invalid: readonly { readonly input: unknown; readonly reason: string }[];
+  readonly valid: readonly { readonly expected: number; readonly input: unknown }[];
+}

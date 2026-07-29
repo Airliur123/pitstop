@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import { request as httpRequest } from 'node:http';
 
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import {
@@ -145,6 +146,7 @@ describe.sequential('public, authentication, contribution, and moderation API', 
       GOOGLE_FORM_BODY_LIMIT_BYTES: '1024',
     });
     app = await createApiApplication();
+    await app.listen(0, '127.0.0.1');
   });
 
   afterAll(async () => {
@@ -852,12 +854,41 @@ describe.sequential('public, authentication, contribution, and moderation API', 
     }).expect(400);
     expect(invalid.body.code).toBe('GOOGLE_FORM_PAYLOAD_INVALID');
 
-    const oversized = await signedGoogleFormRequest(googleFormBody({ notes: 'x'.repeat(1000) }), {
-      externalId: `oversized-${createUlid()}`,
-      keyId: 'test-v2',
-      secret: GOOGLE_FORM_CURRENT_SECRET,
-    }).expect(413);
+    const oversizedExternalId = `oversized-whitespace-${createUlid()}`;
+    const whitespaceOversizedBody = `${' '.repeat(1_100)}${JSON.stringify(googleFormBody())}`;
+    const oversized = await request(getApp().getHttpServer())
+      .post('/api/v1/integrations/google-form/submissions')
+      .set('Content-Type', 'application/json')
+      .set('X-PitStop-Source', 'google-form-main')
+      .set('X-PitStop-Submission-Id', oversizedExternalId)
+      .set('X-PitStop-Timestamp', new Date().toISOString())
+      .set('X-PitStop-Signature', '0'.repeat(64))
+      .set('X-PitStop-Key-Id', 'test-v2')
+      .send(whitespaceOversizedBody)
+      .expect(413);
     expect(oversized.body.code).toBe('INTEGRATION_BODY_TOO_LARGE');
+    expect(
+      await apiScalarCount(
+        'SELECT COUNT(*) AS count FROM google_form_submissions WHERE external_submission_id = ?',
+        [oversizedExternalId],
+      ),
+    ).toBe(0);
+
+    const chunkedExternalId = `oversized-chunked-${createUlid()}`;
+    const chunked = await chunkedGoogleFormRequest(
+      `${JSON.stringify(googleFormBody()).slice(0, -1)},${JSON.stringify('padding')}:${JSON.stringify(
+        'x'.repeat(1_100),
+      )}}`,
+      chunkedExternalId,
+    );
+    expect(chunked.status).toBe(413);
+    expect(chunked.body.code).toBe('INTEGRATION_BODY_TOO_LARGE');
+    expect(
+      await apiScalarCount(
+        'SELECT COUNT(*) AS count FROM google_form_submissions WHERE external_submission_id = ?',
+        [chunkedExternalId],
+      ),
+    ).toBe(0);
 
     const environment = getApp().get<ApiEnvironmentProvider>(API_ENVIRONMENT);
     const mutableEnvironment = environment as { GOOGLE_FORM_SOURCE_ENABLED: boolean };
@@ -1217,6 +1248,48 @@ describe.sequential('public, authentication, contribution, and moderation API', 
       .set('X-PitStop-Signature', signature)
       .set('X-PitStop-Key-Id', options.keyId)
       .send(body);
+  }
+
+  async function chunkedGoogleFormRequest(
+    rawBody: string,
+    externalId: string,
+  ): Promise<{ readonly body: Record<string, unknown>; readonly status: number }> {
+    const apiUrl = new URL('/api/v1/integrations/google-form/submissions', await getApp().getUrl());
+    return new Promise((resolve, reject) => {
+      const timestamp = new Date().toISOString();
+      const outgoing = httpRequest(
+        apiUrl,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Transfer-Encoding': 'chunked',
+            'X-PitStop-Key-Id': 'test-v2',
+            'X-PitStop-Signature': '0'.repeat(64),
+            'X-PitStop-Source': 'google-form-main',
+            'X-PitStop-Submission-Id': externalId,
+            'X-PitStop-Timestamp': timestamp,
+          },
+          method: 'POST',
+        },
+        (response) => {
+          const chunks: Buffer[] = [];
+          response.on('data', (chunk: Buffer) => chunks.push(chunk));
+          response.on('end', () => {
+            const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<
+              string,
+              unknown
+            >;
+            resolve({ body: parsed, status: response.statusCode ?? 0 });
+          });
+        },
+      );
+      outgoing.on('error', reject);
+      const body = Buffer.from(rawBody);
+      for (let offset = 0; offset < body.byteLength; offset += 128) {
+        outgoing.write(body.subarray(offset, offset + 128));
+      }
+      outgoing.end();
+    });
   }
 
   async function apiScalarCount(queryText: string, values: readonly string[]): Promise<number> {

@@ -81,61 +81,83 @@ export class IntegrationWorkerRepository {
     }));
   }
 
-  async findGeocodingCandidates(limit = 100): Promise<GeocodeContributionJob[]> {
-    const [rows] = await this.pool.query<CandidateRow[]>(
-      `SELECT id, correlation_id, contribution_id
-       FROM google_form_submissions
-       WHERE contribution_id IS NOT NULL
-         AND processing_status NOT IN ('COMPLETED', 'DEAD_LETTER', 'REJECTED_INVALID')
-         AND geocoding_status IN ('PENDING', 'FAILED')
-       ORDER BY updated_at ASC, id ASC
-       LIMIT ?`,
-      [limit],
-    );
-    return rows.flatMap((row) =>
-      row.contribution_id
-        ? [
-            {
-              attempt: 0,
-              contributionId: row.contribution_id,
-              correlationId: row.correlation_id,
-              enqueuedAt: new Date().toISOString(),
-              idempotencyKey: `google-form:geocode:${row.contribution_id}`,
-              inboxId: row.id,
-              requestId: row.correlation_id,
-            },
-          ]
-        : [],
-    );
+  async claimGeocodingCandidates(
+    leaseSeconds: number,
+    limit = 100,
+  ): Promise<GeocodeContributionJob[]> {
+    const leaseCutoff = new Date(Date.now() - leaseSeconds * 1_000);
+    const rows = await this.withTransaction(async (connection) => {
+      const [candidates] = await connection.query<CandidateRow[]>(
+        `SELECT id, correlation_id, contribution_id
+         FROM google_form_submissions
+         WHERE contribution_id IS NOT NULL
+           AND processing_status NOT IN ('COMPLETED', 'DEAD_LETTER', 'REJECTED_INVALID')
+           AND (
+             geocoding_status IN ('PENDING', 'FAILED')
+             OR (geocoding_status = 'PROCESSING' AND updated_at <= ?)
+           )
+         ORDER BY updated_at ASC, id ASC
+         LIMIT ?
+         FOR UPDATE SKIP LOCKED`,
+        [leaseCutoff, boundedCandidateLimit(limit)],
+      );
+      for (const candidate of candidates) {
+        await connection.execute(
+          `UPDATE google_form_submissions
+           SET geocoding_status = 'PROCESSING', processing_status = 'PROCESSING',
+             updated_at = CURRENT_TIMESTAMP(3)
+           WHERE id = ?
+             AND processing_status NOT IN ('COMPLETED', 'DEAD_LETTER', 'REJECTED_INVALID')
+             AND (
+               geocoding_status IN ('PENDING', 'FAILED')
+               OR (geocoding_status = 'PROCESSING' AND updated_at <= ?)
+             )`,
+          [candidate.id, leaseCutoff],
+        );
+      }
+      return candidates;
+    });
+    return rows.flatMap(geocodingJobFromCandidate);
   }
 
-  async findDuplicateCandidates(limit = 100): Promise<DetectDuplicatePlaceJob[]> {
-    const [rows] = await this.pool.query<CandidateRow[]>(
-      `SELECT id, correlation_id, contribution_id
-       FROM google_form_submissions
-       WHERE contribution_id IS NOT NULL
-         AND processing_status NOT IN ('COMPLETED', 'DEAD_LETTER', 'REJECTED_INVALID')
-         AND geocoding_status = 'SUCCEEDED'
-         AND duplicate_detection_status IN ('PENDING', 'FAILED')
-       ORDER BY updated_at ASC, id ASC
-       LIMIT ?`,
-      [limit],
-    );
-    return rows.flatMap((row) =>
-      row.contribution_id
-        ? [
-            {
-              attempt: 0,
-              contributionId: row.contribution_id,
-              correlationId: row.correlation_id,
-              enqueuedAt: new Date().toISOString(),
-              idempotencyKey: `google-form:duplicate:${row.contribution_id}`,
-              inboxId: row.id,
-              requestId: row.correlation_id,
-            },
-          ]
-        : [],
-    );
+  async claimDuplicateCandidates(
+    leaseSeconds: number,
+    limit = 100,
+  ): Promise<DetectDuplicatePlaceJob[]> {
+    const leaseCutoff = new Date(Date.now() - leaseSeconds * 1_000);
+    const rows = await this.withTransaction(async (connection) => {
+      const [candidates] = await connection.query<CandidateRow[]>(
+        `SELECT id, correlation_id, contribution_id
+         FROM google_form_submissions
+         WHERE contribution_id IS NOT NULL
+           AND processing_status NOT IN ('COMPLETED', 'DEAD_LETTER', 'REJECTED_INVALID')
+           AND geocoding_status = 'SUCCEEDED'
+           AND (
+             duplicate_detection_status IN ('PENDING', 'FAILED')
+             OR (duplicate_detection_status = 'PROCESSING' AND updated_at <= ?)
+           )
+         ORDER BY updated_at ASC, id ASC
+         LIMIT ?
+         FOR UPDATE SKIP LOCKED`,
+        [leaseCutoff, boundedCandidateLimit(limit)],
+      );
+      for (const candidate of candidates) {
+        await connection.execute(
+          `UPDATE google_form_submissions
+           SET duplicate_detection_status = 'PROCESSING', processing_status = 'PROCESSING',
+             updated_at = CURRENT_TIMESTAMP(3)
+           WHERE id = ? AND geocoding_status = 'SUCCEEDED'
+             AND processing_status NOT IN ('COMPLETED', 'DEAD_LETTER', 'REJECTED_INVALID')
+             AND (
+               duplicate_detection_status IN ('PENDING', 'FAILED')
+               OR (duplicate_detection_status = 'PROCESSING' AND updated_at <= ?)
+             )`,
+          [candidate.id, leaseCutoff],
+        );
+      }
+      return candidates;
+    });
+    return rows.flatMap(duplicateJobFromCandidate);
   }
 
   async markQueued(inboxId: string): Promise<void> {
@@ -474,4 +496,38 @@ function contributionPayloadFromGoogleForm(payload: GoogleFormCanonicalPayload) 
 
 function parseJson(value: unknown): unknown {
   return typeof value === 'string' ? (JSON.parse(value) as unknown) : value;
+}
+
+function boundedCandidateLimit(value: number): number {
+  return Math.max(1, Math.min(100, Math.trunc(value)));
+}
+
+function geocodingJobFromCandidate(row: CandidateRow): GeocodeContributionJob[] {
+  if (!row.contribution_id) return [];
+  return [
+    {
+      attempt: 0,
+      contributionId: row.contribution_id,
+      correlationId: row.correlation_id,
+      enqueuedAt: new Date().toISOString(),
+      idempotencyKey: `google-form:geocode:${row.contribution_id}`,
+      inboxId: row.id,
+      requestId: row.correlation_id,
+    },
+  ];
+}
+
+function duplicateJobFromCandidate(row: CandidateRow): DetectDuplicatePlaceJob[] {
+  if (!row.contribution_id) return [];
+  return [
+    {
+      attempt: 0,
+      contributionId: row.contribution_id,
+      correlationId: row.correlation_id,
+      enqueuedAt: new Date().toISOString(),
+      idempotencyKey: `google-form:duplicate:${row.contribution_id}`,
+      inboxId: row.id,
+      requestId: row.correlation_id,
+    },
+  ];
 }

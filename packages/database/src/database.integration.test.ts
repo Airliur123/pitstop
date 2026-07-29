@@ -1,3 +1,6 @@
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { eq } from 'drizzle-orm';
@@ -75,6 +78,10 @@ const expectedTables = [
 
 describe.sequential('MySQL 8.4 spatial database', () => {
   let container: StartedTestContainer | undefined;
+  let legacyContributionId: string;
+  let legacyPlaceGeocodingId: string;
+  let legacyPreferredGeocodingId: string;
+  let migrationFixtureRoot: string | undefined;
   let pool: Pool | undefined;
 
   const getPool = (): Pool => {
@@ -109,15 +116,22 @@ describe.sequential('MySQL 8.4 spatial database', () => {
       port: container.getMappedPort(3306),
       user: 'pitstop_test',
     });
-    await migrate(drizzle({ client: pool }), {
-      migrationsFolder: fileURLToPath(new URL('../migrations', import.meta.url)),
-    });
+    const migrationsFolder = fileURLToPath(new URL('../migrations', import.meta.url));
+    const stagedMigrations = await stageMigrationsThrough0008(migrationsFolder);
+    migrationFixtureRoot = stagedMigrations.root;
+    await migrate(drizzle({ client: pool }), { migrationsFolder: stagedMigrations.folder });
+    const legacyFixture = await insertLegacyGeocodingMigrationFixture(pool);
+    legacyContributionId = legacyFixture.contributionId;
+    legacyPlaceGeocodingId = legacyFixture.placeGeocodingId;
+    legacyPreferredGeocodingId = legacyFixture.preferredGeocodingId;
+    await migrate(drizzle({ client: pool }), { migrationsFolder });
     await seedDatabase(pool);
   });
 
   afterAll(async () => {
     await pool?.end();
     await container?.stop();
+    if (migrationFixtureRoot) await rm(migrationFixtureRoot, { force: true, recursive: true });
   });
 
   it('1. migrates an empty MySQL database', async () => {
@@ -134,6 +148,23 @@ describe.sequential('MySQL 8.4 spatial database', () => {
       'SELECT COUNT(*) AS count FROM __drizzle_migrations',
     );
     expect(Number(rows[0]?.count)).toBe(10);
+  });
+
+  it('2a. migration 0009 deterministically deduplicates contribution geocoding only', async () => {
+    const [contributionRows] = await getPool().execute<IdRow[]>(
+      `SELECT id FROM geocoding_results
+       WHERE contribution_id = ?
+       ORDER BY id ASC`,
+      [legacyContributionId],
+    );
+    expect(contributionRows.map((row) => row.id)).toEqual([legacyPreferredGeocodingId]);
+    expect(
+      await scalarCount(
+        getPool(),
+        'SELECT COUNT(*) AS count FROM geocoding_results WHERE id = ? AND place_id IS NOT NULL',
+        [legacyPlaceGeocodingId],
+      ),
+    ).toBe(1);
   });
 
   it('3. creates every required domain table', async () => {
@@ -1097,6 +1128,118 @@ describe.sequential('MySQL 8.4 spatial database', () => {
     ).rejects.toMatchObject({ code: 'ER_DUP_ENTRY' });
   });
 });
+
+async function stageMigrationsThrough0008(
+  sourceFolder: string,
+): Promise<{ readonly folder: string; readonly root: string }> {
+  const root = await mkdtemp(join(tmpdir(), 'pitstop-migrations-'));
+  const folder = join(root, 'migrations');
+  await cp(sourceFolder, folder, { recursive: true });
+  const journalPath = join(folder, 'meta', '_journal.json');
+  const journal = JSON.parse(await readFile(journalPath, 'utf8')) as {
+    readonly dialect: string;
+    readonly entries: readonly { readonly idx: number }[];
+    readonly version: string;
+  };
+  await writeFile(
+    journalPath,
+    `${JSON.stringify(
+      {
+        ...journal,
+        entries: journal.entries.filter((entry) => entry.idx <= 8),
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+  return { folder, root };
+}
+
+async function insertLegacyGeocodingMigrationFixture(pool: Pool): Promise<{
+  readonly contributionId: string;
+  readonly placeGeocodingId: string;
+  readonly preferredGeocodingId: string;
+}> {
+  const contributionId = createUlid();
+  const placeId = createUlid();
+  await pool.execute(
+    `INSERT INTO contributions (
+       id, submitted_by, source, contribution_status, submitted_at
+     ) VALUES (?, NULL, 'GOOGLE_FORM', 'PENDING', CURRENT_TIMESTAMP(3))`,
+    [contributionId],
+  );
+  await pool.execute(
+    `INSERT INTO places (
+       id, name, slug, address, district, city, province, location,
+       place_status, verification_status, data_freshness_at
+     ) VALUES (?, 'Legacy migration fixture', ?, 'Fixture address', 'Fixture district',
+       'Fixture city', 'Fixture province', ST_SRID(POINT(106.8, -6.1), 4326),
+       'DRAFT', 'UNVERIFIED', CURRENT_TIMESTAMP(3))`,
+    [placeId, `legacy-migration-${placeId.toLowerCase()}`],
+  );
+
+  const tiedIds = [createUlid(), createUlid()].sort();
+  const candidates = [
+    {
+      confidence: '0.9900',
+      id: createUlid(),
+      status: 'FAILED',
+      updatedAt: '2026-07-29 00:00:05.000',
+    },
+    {
+      confidence: '0.9900',
+      id: createUlid(),
+      status: 'LOW_CONFIDENCE',
+      updatedAt: '2026-07-29 00:00:05.000',
+    },
+    {
+      confidence: '0.5000',
+      id: createUlid(),
+      status: 'SUCCEEDED',
+      updatedAt: '2026-07-29 00:00:05.000',
+    },
+    {
+      confidence: '0.9000',
+      id: createUlid(),
+      status: 'SUCCEEDED',
+      updatedAt: '2026-07-29 00:00:04.000',
+    },
+    {
+      confidence: '0.9000',
+      id: tiedIds[0] as string,
+      status: 'SUCCEEDED',
+      updatedAt: '2026-07-29 00:00:06.000',
+    },
+    {
+      confidence: '0.9000',
+      id: tiedIds[1] as string,
+      status: 'SUCCEEDED',
+      updatedAt: '2026-07-29 00:00:06.000',
+    },
+  ] as const;
+  for (const candidate of candidates) {
+    await pool.execute(
+      `INSERT INTO geocoding_results (
+         id, contribution_id, provider, confidence, status, created_at, updated_at
+       ) VALUES (?, ?, 'LEGACY_FIXTURE', ?, ?, '2026-07-29 00:00:00.000', ?)`,
+      [candidate.id, contributionId, candidate.confidence, candidate.status, candidate.updatedAt],
+    );
+  }
+  const placeGeocodingId = createUlid();
+  await pool.execute(
+    `INSERT INTO geocoding_results (
+       id, place_id, provider, confidence, status, created_at, updated_at
+     ) VALUES (?, ?, 'LEGACY_FIXTURE', 0.1000, 'FAILED',
+       '2026-07-29 00:00:00.000', '2026-07-29 00:00:00.000')`,
+    [placeGeocodingId, placeId],
+  );
+  return {
+    contributionId,
+    placeGeocodingId,
+    preferredGeocodingId: tiedIds[0] as string,
+  };
+}
 
 async function insertUser(pool: Pool, email: string): Promise<Ulid> {
   const id = createUlid();

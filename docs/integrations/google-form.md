@@ -82,9 +82,11 @@ pitstop-google-form-v1
 
 Canonical JSON recursively sorts object keys, preserves array order, omits JavaScript `undefined`,
 and uses JSON scalar encoding without extra whitespace. The signature is lowercase hex
-HMAC-SHA256. The API validates header shapes, known/enabled source, replay window, body size, media
-type, and the signature using a constant-time byte comparison before accepting the business
-payload.
+HMAC-SHA256. `GOOGLE_FORM_BODY_LIMIT_BYTES` is enforced on the original request stream before JSON
+canonicalization or HMAC work. `Content-Length` provides an early rejection, while the same
+streaming counter also bounds chunked requests. The API then validates header shapes,
+known/enabled source, replay window, media type, and the signature using a constant-time byte
+comparison before accepting the business payload.
 
 Current and optional previous secrets come only from environment variables or the deployment secret
 manager. Database rows retain key identifiers and policies, never key material. During rotation:
@@ -107,9 +109,12 @@ external_submission_id)` provides inbox idempotency.
 
 The worker periodically reconciles durable states with `pitstop-integration`. A Redis outage delays
 work but cannot lose an accepted submission. Deterministic BullMQ job IDs make enqueue retries safe.
-Stale `QUEUED` rows and unfinished downstream stages are rediscovered. Delivery is at least once;
-database locks, status transitions, the inbox-to-contribution link, and unique geocoding/hint keys
-make effects idempotent.
+Stale `QUEUED` rows and unfinished downstream stages are rediscovered. A geocoding or duplicate
+stage in `PROCESSING` remains owned until its bounded `WORKER_STAGE_LEASE_SECONDS` age expires.
+Reconciliation claims expired stages with row locks and `SKIP LOCKED`, refreshes their lease in the
+same transaction, and uses deterministic job IDs; concurrent reconcilers cannot reclaim active work
+or create duplicate effects. Delivery is at least once; database locks, status transitions, the
+inbox-to-contribution link, and unique geocoding/hint keys make effects idempotent.
 
 Inbox states are `RECEIVED`, `QUEUED`, `PROCESSING`, `COMPLETED`, `RETRYABLE_FAILURE`,
 `DEAD_LETTER`, and `REJECTED_INVALID`. Geocoding and duplicate detection each have a stage status.
@@ -198,7 +203,7 @@ production Sheet, or internet geocoder.
 - provision current HMAC material in the API secret manager and matching Script Properties;
 - use a stable source/key ID, enable the source explicitly, and document the rotation owner;
 - set a public HTTPS endpoint, replay window, source/IP rate limits, and body limit;
-- run migrations before API/worker rollout and verify the reconciliation interval;
+- run migrations before API/worker rollout and verify the reconciliation interval and stage lease;
 - configure a compliant geocoder, User-Agent, timeout, confidence threshold, and egress policy;
 - alert on signature/replay rejection, growing pending/retry depth, and DLQ entries;
 - verify log redaction and the payload/geocoder retention job in the deployment platform;

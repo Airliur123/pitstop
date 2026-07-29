@@ -11,6 +11,7 @@ import { parseApiEnvironment, parseCorsOrigins } from '@pitstop/config';
 import { Logger } from 'nestjs-pino';
 
 import { AppModule } from './app.module';
+import { registerGoogleFormBodyLimit } from './http/google-form-body-limit';
 
 export async function createApiApplication(): Promise<NestFastifyApplication> {
   const environment = parseApiEnvironment(process.env);
@@ -46,6 +47,11 @@ export async function createApiApplication(): Promise<NestFastifyApplication> {
     origin: parseCorsOrigins(environment.CORS_ALLOWED_ORIGINS),
   });
   await app.register(helmet, { contentSecurityPolicy: false });
+  registerGoogleFormBodyLimit(
+    app.getHttpAdapter().getInstance(),
+    `/${globalPrefix}/integrations/google-form/submissions`,
+    environment.GOOGLE_FORM_BODY_LIMIT_BYTES,
+  );
 
   const swaggerConfiguration = new DocumentBuilder()
     .setTitle('PitStop API')

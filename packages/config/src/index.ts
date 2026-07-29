@@ -390,6 +390,11 @@ export const workerEnvironmentSchema = z
       .max(300_000)
       .optional()
       .default(5_000),
+    WORKER_STAGE_LEASE_SECONDS: positiveIntegerEnvironmentSchema
+      .min(30)
+      .max(3_600)
+      .optional()
+      .default(300),
     GEOCODING_PROVIDER: z.enum(['deterministic', 'nominatim']).optional().default('deterministic'),
     GEOCODING_BASE_URL: urlSchema.optional().default('https://nominatim.openstreetmap.org'),
     GEOCODING_USER_AGENT: nonEmptyStringSchema.optional().default('PitStop/1.0'),

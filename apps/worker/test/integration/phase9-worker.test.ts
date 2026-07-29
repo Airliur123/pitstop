@@ -78,6 +78,7 @@ describe.sequential('Phase 9 worker integration', () => {
       NODE_ENV: 'test',
       REDIS_URL: `redis://${redisContainer.getHost()}:${redisContainer.getMappedPort(6379)}`,
       WORKER_RECONCILE_INTERVAL_MS: 5_000,
+      WORKER_STAGE_LEASE_SECONDS: 300,
     };
     repository = new IntegrationWorkerRepository(pool);
     service = new IntegrationJobService(
@@ -231,6 +232,96 @@ describe.sequential('Phase 9 worker integration', () => {
         first?.contributionId ?? '',
       ]),
     ).toBe(1);
+  });
+
+  it('reclaims a crashed geocoding stage only after lease expiry and only once', async () => {
+    const inboxId = await insertInbox({ category: 'TOILET' });
+    const geocodeJob = await service.processSubmission(processJobFor(inboxId));
+    expect(geocodeJob).not.toBeNull();
+    await repository.markGeocodingProcessing(inboxId);
+
+    const activeClaims = await Promise.all([
+      repository.claimGeocodingCandidates(300),
+      repository.claimGeocodingCandidates(300),
+    ]);
+    expect(activeClaims.flat().filter((job) => job.inboxId === inboxId)).toHaveLength(0);
+
+    await getPool().execute(
+      `UPDATE google_form_submissions
+       SET updated_at = DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 301 SECOND)
+       WHERE id = ?`,
+      [inboxId],
+    );
+    const competingClaims = await Promise.all([
+      repository.claimGeocodingCandidates(300),
+      repository.claimGeocodingCandidates(300),
+    ]);
+    const reclaimed = competingClaims.flat().filter((job) => job.inboxId === inboxId);
+    expect(reclaimed).toHaveLength(1);
+    expect(reclaimed[0]).toMatchObject({
+      contributionId: geocodeJob?.contributionId,
+      inboxId,
+    });
+
+    await service.geocode(reclaimed[0]);
+    expect(
+      await count('SELECT COUNT(*) AS count FROM geocoding_results WHERE contribution_id = ?', [
+        geocodeJob?.contributionId ?? '',
+      ]),
+    ).toBe(1);
+  });
+
+  it('recovers stale duplicate detection atomically without duplicating hints', async () => {
+    const inboxId = await insertInbox({
+      category: 'MAKAN_MURAH',
+      mapUrl: 'https://www.google.com/maps/place/X/@-6.1468,106.8061,17z',
+      placeName: 'Warung Bu Ani',
+    });
+    const geocodeJob = await service.processSubmission(processJobFor(inboxId));
+    const duplicateJob = await service.geocode(geocodeJob);
+    expect(duplicateJob).not.toBeNull();
+    await service.detectDuplicates(duplicateJob);
+    const originalHintCount = await count(
+      'SELECT COUNT(*) AS count FROM duplicate_place_hints WHERE contribution_id = ?',
+      [geocodeJob?.contributionId ?? ''],
+    );
+    expect(originalHintCount).toBeGreaterThan(0);
+
+    await getPool().execute(
+      `UPDATE google_form_submissions
+       SET processing_status = 'PROCESSING', duplicate_detection_status = 'PROCESSING',
+         updated_at = CURRENT_TIMESTAMP(3)
+       WHERE id = ?`,
+      [inboxId],
+    );
+    expect(
+      (await repository.claimDuplicateCandidates(300)).filter((job) => job.inboxId === inboxId),
+    ).toHaveLength(0);
+    await getPool().execute(
+      `UPDATE google_form_submissions
+       SET updated_at = DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 301 SECOND)
+       WHERE id = ?`,
+      [inboxId],
+    );
+
+    const competingClaims = await Promise.all([
+      repository.claimDuplicateCandidates(300),
+      repository.claimDuplicateCandidates(300),
+    ]);
+    const reclaimed = competingClaims.flat().filter((job) => job.inboxId === inboxId);
+    expect(reclaimed).toHaveLength(1);
+    await service.detectDuplicates(reclaimed[0]);
+
+    expect(await inboxStatus(inboxId)).toMatchObject({
+      duplicate_detection_status: 'SUCCEEDED',
+      geocoding_status: 'SUCCEEDED',
+      processing_status: 'COMPLETED',
+    });
+    expect(
+      await count('SELECT COUNT(*) AS count FROM duplicate_place_hints WHERE contribution_id = ?', [
+        geocodeJob?.contributionId ?? '',
+      ]),
+    ).toBe(originalHintCount);
   });
 
   async function insertInbox(input: {

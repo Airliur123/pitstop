@@ -149,6 +149,7 @@ describe('worker environment parser', () => {
     });
     expect(parsed.GEOCODING_PROVIDER).toBe('deterministic');
     expect(parsed.WORKER_RECONCILE_INTERVAL_MS).toBe(5000);
+    expect(parsed.WORKER_STAGE_LEASE_SECONDS).toBe(300);
   });
 
   it('rejects deterministic geocoding in production', () => {

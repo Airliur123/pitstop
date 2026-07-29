@@ -19,6 +19,13 @@ Do not add food-price questions for `TOILET`, `MUSALA`, or `ISTIRAHAT`. `Fasilit
 separated `CODE:STATUS` values such as `PARKING:AVAILABLE,TOILET:UNKNOWN`. `Jam Operasional` is an
 optional JSON array matching the canonical `dayOfWeek/isClosed/is24Hours/opensAt/closesAt` shape.
 
+Rupiah cells accept only an integer number or the unambiguous text forms `12000`, `12.000`, and
+`Rp 12.000` (case-insensitive). Negative values, decimals, commas or mixed separators, arbitrary
+suffixes, spreadsheet formulas, and values above the backend limit are rejected instead of having
+characters silently stripped. The shared accepted/rejected cases are in
+`fixtures/rupiah-v1.json`; run `runPitStopRupiahParserSelfTest()` from the Apps Script editor after
+copying a template update.
+
 The script creates and owns three control columns:
 
 - `PitStop Submission ID` stores a UUID once. This immutable value moves with the row and remains
