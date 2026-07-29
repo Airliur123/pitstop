@@ -1,46 +1,86 @@
 import {
-  AdminPageShell,
-  AdminSidebar,
   AdminStatCard,
   AdminTopbar,
-  Alert,
   Badge,
   Card,
-  SkipLink,
+  EmptyState,
+  LinkButton,
+  SectionHeader,
 } from '@pitstop/ui';
 
-export default function AdminFoundationPage() {
+import { AccessDenied } from '../components/access-denied';
+import { AdminShell } from '../components/admin-shell';
+import { getAdminDashboard } from '../lib/api/server';
+import { requireAuthenticatedUser } from '../lib/auth';
+import { actionLabels, formatDateTime } from '../lib/format';
+
+export const dynamic = 'force-dynamic';
+
+export default async function AdminDashboardPage() {
+  const user = await requireAuthenticatedUser();
+  if (user.role !== 'ADMIN') return <AccessDenied email={user.email} />;
+  const dashboard = await getAdminDashboard();
+
   return (
-    <>
-      <SkipLink />
-      <AdminPageShell>
-        <AdminSidebar />
-        <main className="min-w-0 px-4 py-6 sm:px-8 sm:py-7" id="main-content">
-          <AdminTopbar
-            description="Foundation antarmuka administrasi · Data Simulasi"
-            title="Dashboard"
-            trailing={<Badge tone="success">UI Preview</Badge>}
-          />
-          <Alert className="mt-6" title="Belum terhubung ke data bisnis" tone="info">
-            Shell ini hanya memvalidasi layout, navigasi, token, dan komponen Phase 2.
-          </Alert>
-          <section
-            aria-label="Statistik simulasi"
-            className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
-          >
-            <AdminStatCard label="Tempat Aktif" tone="success" value="—" />
-            <AdminStatCard label="Menunggu Review" tone="warning" value="—" />
-            <AdminStatCard label="Laporan Baru" tone="danger" value="—" />
-            <AdminStatCard label="Perlu Diperbarui" value="—" />
-          </section>
-          <Card className="mt-5">
-            <h2 className="text-lg font-semibold">Konten admin</h2>
-            <p className="mt-2 text-sm text-muted">
-              Workflow moderasi, autentikasi, CRUD, dan statistik API sengaja ditunda.
-            </p>
-          </Card>
-        </main>
-      </AdminPageShell>
-    </>
+    <AdminShell current="dashboard" userEmail={user.email}>
+      <AdminTopbar
+        description={`Sesi aman · ${user.email}`}
+        title="Dashboard moderasi"
+        trailing={<Badge tone="success">Administrator</Badge>}
+      />
+      <section
+        aria-label="Ringkasan antrean moderasi"
+        className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+      >
+        <AdminStatCard
+          label="Menunggu review"
+          tone="warning"
+          value={String(dashboard.totals.pending)}
+        />
+        <AdminStatCard label="Sedang direview" value={String(dashboard.totals.inReview)} />
+        <AdminStatCard
+          label="Perlu perbaikan"
+          tone="danger"
+          value={String(dashboard.totals.needsRevision)}
+        />
+        <AdminStatCard
+          label="Siap dipublikasikan"
+          tone="success"
+          value={String(dashboard.totals.approvedAwaitingMerge)}
+        />
+      </section>
+
+      <Card className="mt-6">
+        <SectionHeader
+          action={<LinkButton href="/contributions">Buka antrean</LinkButton>}
+          description="Aktivitas keputusan terbaru dari seluruh administrator."
+          title="Aktivitas moderasi"
+        />
+        {dashboard.recentActivity.length === 0 ? (
+          <div className="mt-5">
+            <EmptyState title="Belum ada aktivitas">
+              Aktivitas akan muncul setelah kontribusi mulai ditinjau.
+            </EmptyState>
+          </div>
+        ) : (
+          <ol className="mt-5 divide-y divide-border">
+            {dashboard.recentActivity.map((event) => (
+              <li className="flex flex-wrap items-start justify-between gap-3 py-4" key={event.id}>
+                <div>
+                  <p className="font-semibold">{actionLabels[event.action]}</p>
+                  <p className="mt-1 text-sm text-muted">
+                    {event.actor.email} · versi {event.contributionVersion}
+                  </p>
+                  {event.reason ? <p className="mt-2 text-sm">{event.reason}</p> : null}
+                </div>
+                <time className="text-sm text-muted" dateTime={event.createdAt}>
+                  {formatDateTime(event.createdAt)}
+                </time>
+              </li>
+            ))}
+          </ol>
+        )}
+      </Card>
+    </AdminShell>
   );
 }

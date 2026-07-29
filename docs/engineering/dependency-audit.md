@@ -99,3 +99,16 @@ This records the technical basis and does not substitute for release-owner appro
 
 The additions were checked against the locked Node/pnpm toolchain. No framework, database, workspace,
 or architecture dependency changed.
+
+## Phase 8 admin testing additions
+
+`@pitstop/admin` now declares the existing `@pitstop/validation` workspace package because its
+server callback must apply the same safe magic-link token/return validation as web and API. This
+adds no third-party runtime package.
+
+The admin package also declares `vitest@4.1.10`, `@testing-library/react@16.3.2`, and
+`@testing-library/jest-dom@7.0.0` as development-only dependencies. These exact versions were
+already pinned, installed, and proven compatible with React 19, TypeScript 6, jsdom, and Node 24 in
+`@pitstop/web`; Phase 8 reuses them to test accessible decision dialogs and status-valid actions in
+their owning app. No new version, production dependency, or package-manager override was
+introduced.

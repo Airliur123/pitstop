@@ -291,3 +291,250 @@ export const contributionResponseSchema = {
     meta: requestMetadata,
   },
 };
+
+const adminReviewer = {
+  type: 'object' as const,
+  required: ['id', 'email', 'claimedAt', 'claimExpiresAt', 'claimExpired'],
+  properties: {
+    id: { type: 'string' as const, minLength: 26, maxLength: 26 },
+    email: { type: 'string' as const },
+    claimedAt: { type: 'string' as const, format: 'date-time' },
+    claimExpiresAt: { type: 'string' as const, format: 'date-time' },
+    claimExpired: { type: 'boolean' as const },
+  },
+};
+
+const moderationEvent = {
+  type: 'object' as const,
+  required: [
+    'id',
+    'actor',
+    'previousStatus',
+    'nextStatus',
+    'action',
+    'reason',
+    'contributionVersion',
+    'mergedPlaceId',
+    'createdAt',
+  ],
+  properties: {
+    id: { type: 'string' as const, minLength: 26, maxLength: 26 },
+    actor: {
+      type: 'object' as const,
+      required: ['id', 'email'],
+      properties: {
+        id: { type: 'string' as const },
+        email: { type: 'string' as const },
+      },
+    },
+    previousStatus: { type: 'string' as const },
+    nextStatus: { type: 'string' as const },
+    action: {
+      type: 'string' as const,
+      enum: ['CLAIM', 'RECLAIM', 'NEEDS_REVISION', 'REJECT', 'APPROVE', 'MERGE'],
+    },
+    reason: { type: 'string' as const, nullable: true },
+    contributionVersion: { type: 'integer' as const, minimum: 1 },
+    mergedPlaceId: { type: 'string' as const, nullable: true },
+    createdAt: { type: 'string' as const, format: 'date-time' },
+  },
+};
+
+const verifiedLocation = {
+  type: 'object' as const,
+  additionalProperties: false,
+  required: ['latitude', 'longitude', 'district', 'city', 'province'],
+  properties: {
+    latitude: { type: 'number' as const, minimum: -90, maximum: 90 },
+    longitude: { type: 'number' as const, minimum: -180, maximum: 180 },
+    district: { type: 'string' as const, maxLength: 120 },
+    city: { type: 'string' as const, maxLength: 120 },
+    province: { type: 'string' as const, maxLength: 120 },
+    postalCode: { type: 'string' as const, maxLength: 12, nullable: true },
+  },
+};
+
+const adminContributionDetail = {
+  type: 'object' as const,
+  required: [
+    'id',
+    'source',
+    'status',
+    'payload',
+    'version',
+    'currentReviewer',
+    'contributor',
+    'decisionReason',
+    'verifiedLocation',
+    'publicationTarget',
+    'mergedPlaceId',
+    'history',
+    'createdAt',
+    'updatedAt',
+    'submittedAt',
+    'approvedAt',
+    'mergedAt',
+  ],
+  properties: {
+    id: { type: 'string' as const, minLength: 26, maxLength: 26 },
+    source: {
+      type: 'string' as const,
+      enum: ['APPLICATION', 'GOOGLE_FORM', 'ADMIN', 'CSV_IMPORT'],
+    },
+    status: { type: 'string' as const },
+    payload: contributionPayload,
+    version: { type: 'integer' as const, minimum: 1 },
+    currentReviewer: { ...adminReviewer, nullable: true },
+    contributor: { type: 'object' as const, nullable: true },
+    decisionReason: { type: 'string' as const, nullable: true },
+    verifiedLocation: { ...verifiedLocation, nullable: true },
+    publicationTarget: { type: 'object' as const, nullable: true },
+    mergedPlaceId: { type: 'string' as const, nullable: true },
+    history: { type: 'array' as const, items: moderationEvent },
+    createdAt: { type: 'string' as const, format: 'date-time' },
+    updatedAt: { type: 'string' as const, format: 'date-time' },
+    submittedAt: { type: 'string' as const, format: 'date-time' },
+    approvedAt: { type: 'string' as const, format: 'date-time', nullable: true },
+    mergedAt: { type: 'string' as const, format: 'date-time', nullable: true },
+  },
+};
+
+function successResponse(data: object) {
+  return {
+    type: 'object' as const,
+    required: ['success', 'data', 'requestId', 'meta'],
+    properties: {
+      success: { type: 'boolean' as const, enum: [true] },
+      data,
+      requestId: { type: 'string' as const },
+      meta: requestMetadata,
+    },
+  };
+}
+
+export const adminDashboardResponseSchema = successResponse({
+  type: 'object' as const,
+  required: ['totals', 'recentActivity'],
+  properties: {
+    totals: {
+      type: 'object' as const,
+      required: ['pending', 'inReview', 'needsRevision', 'approvedAwaitingMerge'],
+      properties: {
+        pending: { type: 'integer' as const, minimum: 0 },
+        inReview: { type: 'integer' as const, minimum: 0 },
+        needsRevision: { type: 'integer' as const, minimum: 0 },
+        approvedAwaitingMerge: { type: 'integer' as const, minimum: 0 },
+      },
+    },
+    recentActivity: { type: 'array' as const, items: moderationEvent },
+  },
+});
+
+export const adminQueueResponseSchema = successResponse({
+  type: 'object' as const,
+  required: ['items', 'pagination'],
+  properties: {
+    items: {
+      type: 'array' as const,
+      items: {
+        type: 'object' as const,
+        required: [
+          'id',
+          'placeName',
+          'category',
+          'source',
+          'status',
+          'submittedAt',
+          'version',
+          'currentReviewer',
+        ],
+        properties: {
+          id: { type: 'string' as const },
+          placeName: { type: 'string' as const },
+          category: { type: 'string' as const },
+          source: { type: 'string' as const },
+          status: { type: 'string' as const },
+          submittedAt: { type: 'string' as const, format: 'date-time' },
+          version: { type: 'integer' as const, minimum: 1 },
+          currentReviewer: { ...adminReviewer, nullable: true },
+        },
+      },
+    },
+    pagination: {
+      type: 'object' as const,
+      required: ['hasMore', 'nextCursor'],
+      properties: {
+        hasMore: { type: 'boolean' as const },
+        nextCursor: { type: 'string' as const, nullable: true },
+      },
+    },
+  },
+});
+
+export const adminContributionDetailResponseSchema = successResponse(adminContributionDetail);
+export const moderationMutationResponseSchema = successResponse({
+  type: 'object' as const,
+  required: ['contribution', 'replayed'],
+  properties: {
+    contribution: adminContributionDetail,
+    replayed: { type: 'boolean' as const },
+  },
+});
+export const mergeMutationResponseSchema = successResponse({
+  type: 'object' as const,
+  required: ['contribution', 'replayed', 'placeId', 'placeSlug'],
+  properties: {
+    contribution: adminContributionDetail,
+    replayed: { type: 'boolean' as const },
+    placeId: { type: 'string' as const },
+    placeSlug: { type: 'string' as const },
+  },
+});
+
+export const expectedVersionRequestSchema = {
+  type: 'object' as const,
+  additionalProperties: false,
+  required: ['expectedVersion'],
+  properties: {
+    expectedVersion: { type: 'integer' as const, minimum: 1 },
+  },
+};
+
+export const moderationDecisionRequestSchema = {
+  type: 'object' as const,
+  additionalProperties: false,
+  required: ['expectedVersion', 'reason'],
+  properties: {
+    expectedVersion: { type: 'integer' as const, minimum: 1 },
+    reason: { type: 'string' as const, minLength: 10, maxLength: 500 },
+  },
+};
+
+export const approveContributionRequestSchema = {
+  type: 'object' as const,
+  additionalProperties: false,
+  required: ['expectedVersion', 'location', 'publicationTarget'],
+  properties: {
+    expectedVersion: { type: 'integer' as const, minimum: 1 },
+    location: verifiedLocation,
+    publicationTarget: {
+      oneOf: [
+        {
+          type: 'object' as const,
+          additionalProperties: false,
+          required: ['mode'],
+          properties: { mode: { type: 'string' as const, enum: ['CREATE_NEW'] } },
+        },
+        {
+          type: 'object' as const,
+          additionalProperties: false,
+          required: ['mode', 'targetPlaceId'],
+          properties: {
+            mode: { type: 'string' as const, enum: ['MERGE_EXISTING'] },
+            targetPlaceId: { type: 'string' as const, minLength: 26, maxLength: 26 },
+          },
+        },
+      ],
+    },
+  },
+};

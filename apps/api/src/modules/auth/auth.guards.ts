@@ -66,6 +66,7 @@ export class SessionCsrfGuard implements CanActivate {
   constructor(@Inject(API_ENVIRONMENT) environment: ApiEnvironmentProvider) {
     this.allowedOrigins = new Set([
       new URL(environment.WEB_BASE_URL).origin,
+      new URL(environment.ADMIN_BASE_URL).origin,
       ...environment.CORS_ALLOWED_ORIGINS.split(',').map((value) => new URL(value.trim()).origin),
     ]);
   }

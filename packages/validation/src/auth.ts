@@ -1,7 +1,7 @@
 import { authRoleValues } from '@pitstop/contracts';
 import { z } from 'zod';
 
-export const authReturnToValues = ['/', '/activity', '/contribute'] as const;
+export const authReturnToValues = ['/', '/activity', '/contribute', '/admin'] as const;
 const contributionReturnToPattern = /^\/contributions\/[0-9A-HJKMNP-TV-Z]{26}(?:\/success)?$/;
 
 export function normalizeEmail(value: string): string {

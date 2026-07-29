@@ -7,6 +7,7 @@ import {
   createUlid,
   migrateDatabase,
   type Pool,
+  type RowDataPacket,
   seedDatabase,
 } from '@pitstop/database';
 import request from 'supertest';
@@ -16,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApiApplication } from '../../src/bootstrap';
 import { createCacheKey } from '../../src/common/cache/cache-key';
 import { RedisService } from '../../src/common/redis/redis.service';
+import { AdminModerationRepository } from '../../src/modules/admin-moderation/admin-moderation.repository';
 
 const AUTH_TOKEN_SECRET = 'test-auth-token-secret-01234567890123456789';
 
@@ -33,9 +35,20 @@ interface MailpitMessageDetail {
   readonly Text?: string;
 }
 
+interface CountRow extends RowDataPacket {
+  readonly count: number;
+}
+
+interface PublishedPlaceRow extends RowDataPacket {
+  readonly id: string;
+  readonly place_status: string;
+  readonly slug: string;
+  readonly verification_status: string;
+}
+
 let mailpit: StartedTestContainer | undefined;
 
-describe.sequential('public and Phase 6 authentication API', () => {
+describe.sequential('public, authentication, contribution, and moderation API', () => {
   let app: NestFastifyApplication | undefined;
   let mysql: StartedTestContainer | undefined;
   let pool: Pool | undefined;
@@ -60,6 +73,7 @@ describe.sequential('public and Phase 6 authentication API', () => {
           '--character-set-server=utf8mb4',
           '--collation-server=utf8mb4_0900_ai_ci',
           '--default-time-zone=+00:00',
+          '--log-bin-trust-function-creators=1',
         ])
         .withExposedPorts(3306)
         .withWaitStrategy(Wait.forLogMessage(/port: 3306.*MySQL Community Server/i))
@@ -95,6 +109,7 @@ describe.sequential('public and Phase 6 authentication API', () => {
       MAIL_PORT: String(mailpit.getMappedPort(1025)),
       MAIL_FROM_ADDRESS: 'noreply@pitstop.test',
       WEB_BASE_URL: 'http://localhost:3000',
+      ADMIN_BASE_URL: 'http://localhost:3001',
       AUTH_TOKEN_SECRET,
       AUTH_SESSION_SECRET: 'test-auth-session-secret-01234567890123456789',
       AUTH_COOKIE_SECURE: 'false',
@@ -111,6 +126,8 @@ describe.sequential('public and Phase 6 authentication API', () => {
       RECOMMENDATION_RATE_LIMIT_MAX: '5',
       CONTRIBUTION_RATE_LIMIT_MAX: '100',
       CONTRIBUTION_RATE_LIMIT_WINDOW_SECONDS: '60',
+      ADMIN_READ_RATE_LIMIT_MAX: '500',
+      ADMIN_MUTATION_RATE_LIMIT_MAX: '500',
       CACHE_REDIS_TIMEOUT_MS: '500',
       PUBLIC_CURSOR_SIGNING_SECRET: 'test-public-cursor-signing-secret-0123456789',
     });
@@ -212,6 +229,315 @@ describe.sequential('public and Phase 6 authentication API', () => {
     expect(expired.body.code).toBe('AUTH_TOKEN_EXPIRED');
     expect(expired.text).not.toContain(token);
   });
+
+  it('enforces admin role and transactionally moderates, approves, and publishes once', async () => {
+    const server = getApp().getHttpServer();
+    await request(server).get('/api/v1/admin/dashboard').expect(401);
+
+    const contributorEmail = `contributor-${createUlid().toLowerCase()}@example.test`;
+    const contributor = request.agent(server);
+    await contributor
+      .post('/api/v1/auth/email/request')
+      .send({ email: contributorEmail, returnTo: '/activity' })
+      .expect(202);
+    const contributorToken = await latestMagicLinkToken(contributorEmail);
+    await contributor
+      .post('/api/v1/auth/email/verify')
+      .send({ token: contributorToken })
+      .expect(200);
+    const forbidden = await contributor.get('/api/v1/admin/dashboard').expect(403);
+    expect(forbidden.body.code).toBe('AUTH_ROLE_REQUIRED');
+
+    const payload = {
+      address: 'Jl. Moderasi No. 8, Tambora',
+      category: 'MAKAN_MURAH',
+      facilities: [
+        { code: 'PARKING', status: 'AVAILABLE' },
+        { code: 'TOILET', status: 'AVAILABLE' },
+      ],
+      mainMenu: { name: 'Nasi telur moderasi', priceAmount: 13_000 },
+      mapsUrl: 'https://maps.google.com/?q=-6.1468,106.8061',
+      operatingHours: [
+        {
+          closesAt: '22:00',
+          dayOfWeek: 1,
+          is24Hours: false,
+          isClosed: false,
+          opensAt: '08:00',
+        },
+      ],
+      placeName: `Warung Moderasi ${createUlid().slice(-6)}`,
+    };
+    const created = await contributor
+      .post('/api/v1/contributions')
+      .set('Origin', 'http://localhost:3000')
+      .set('Idempotency-Key', `create-${createUlid()}`)
+      .send({ payload })
+      .expect(201);
+    const contributionId = created.body.data.id as string;
+    const submitted = await contributor
+      .post(`/api/v1/contributions/${contributionId}/submit`)
+      .set('Origin', 'http://localhost:3000')
+      .set('Idempotency-Key', `submit-${createUlid()}`)
+      .send({ expectedVersion: created.body.data.version })
+      .expect(200);
+    expect(submitted.body.data.status).toBe('PENDING');
+
+    const adminEmail = `admin-${createUlid().toLowerCase()}@example.test`;
+    const admin = request.agent(server);
+    await admin
+      .post('/api/v1/auth/email/request')
+      .send({ email: adminEmail, returnTo: '/admin' })
+      .expect(202);
+    if (!pool) throw new Error('Integration pool is not initialized');
+    await pool.execute(
+      `INSERT INTO user_roles (user_id, role_id)
+       SELECT u.id, r.id
+       FROM users u
+       JOIN roles r ON r.code = 'ADMIN'
+       WHERE u.normalized_email = ?
+       ON DUPLICATE KEY UPDATE user_id = VALUES(user_id)`,
+      [adminEmail],
+    );
+    const adminToken = await latestMagicLinkToken(adminEmail);
+    const verifiedAdmin = await admin
+      .post('/api/v1/auth/email/verify')
+      .send({ token: adminToken })
+      .expect(200);
+    expect(verifiedAdmin.body.data).toMatchObject({
+      returnTo: '/admin',
+      user: { role: 'ADMIN' },
+    });
+
+    await expect(getApp().get(AdminModerationRepository).dashboard()).resolves.toBeDefined();
+    const dashboard = await admin.get('/api/v1/admin/dashboard').expect(200);
+    expect(dashboard.headers['cache-control']).toContain('no-store');
+    expect(dashboard.body.data.totals.pending).toBeGreaterThanOrEqual(1);
+
+    const queue = await admin
+      .get('/api/v1/admin/contributions')
+      .query({ limit: '1', search: 'warung moderasi', status: 'PENDING' })
+      .expect(200);
+    expect(queue.body.data.items[0]).toMatchObject({
+      id: contributionId,
+      source: 'APPLICATION',
+      status: 'PENDING',
+    });
+
+    await admin
+      .post(`/api/v1/admin/contributions/${contributionId}/claim`)
+      .set('Idempotency-Key', `claim-no-origin-${createUlid()}`)
+      .send({ expectedVersion: submitted.body.data.version })
+      .expect(403);
+    const claimKey = `claim-${createUlid()}`;
+    const claimed = await admin
+      .post(`/api/v1/admin/contributions/${contributionId}/claim`)
+      .set('Origin', 'http://localhost:3001')
+      .set('Idempotency-Key', claimKey)
+      .send({ expectedVersion: submitted.body.data.version })
+      .expect(200);
+    expect(claimed.body.data).toMatchObject({
+      replayed: false,
+      contribution: { status: 'IN_REVIEW' },
+    });
+    const claimReplay = await admin
+      .post(`/api/v1/admin/contributions/${contributionId}/claim`)
+      .set('Origin', 'http://localhost:3001')
+      .set('Idempotency-Key', claimKey)
+      .send({ expectedVersion: submitted.body.data.version })
+      .expect(200);
+    expect(claimReplay.body.data.replayed).toBe(true);
+    expect(claimReplay.body.data.contribution.history).toHaveLength(1);
+    await pool.execute(
+      `UPDATE contributions
+       SET review_claimed_at = DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 31 MINUTE)
+       WHERE id = ?`,
+      [contributionId],
+    );
+    const reclaimed = await admin
+      .post(`/api/v1/admin/contributions/${contributionId}/claim`)
+      .set('Origin', 'http://localhost:3001')
+      .set('Idempotency-Key', `reclaim-${createUlid()}`)
+      .send({ expectedVersion: claimed.body.data.contribution.version })
+      .expect(200);
+    expect(reclaimed.body.data).toMatchObject({
+      replayed: false,
+      contribution: { status: 'IN_REVIEW' },
+    });
+    expect(reclaimed.body.data.contribution.history.at(-1).action).toBe('RECLAIM');
+
+    const stale = await admin
+      .post(`/api/v1/admin/contributions/${contributionId}/reject`)
+      .set('Origin', 'http://localhost:3001')
+      .set('Idempotency-Key', `reject-${createUlid()}`)
+      .send({
+        expectedVersion: submitted.body.data.version,
+        reason: 'Alamat tidak dapat diverifikasi.',
+      })
+      .expect(409);
+    expect(stale.body.code).toBe('CONTRIBUTION_VERSION_CONFLICT');
+    await admin
+      .post(`/api/v1/admin/contributions/${contributionId}/needs-revision`)
+      .set('Origin', 'http://localhost:3001')
+      .set('Idempotency-Key', `revision-${createUlid()}`)
+      .send({ expectedVersion: reclaimed.body.data.contribution.version, reason: 'pendek' })
+      .expect(400);
+
+    const [beforePlaces] = await pool.execute<CountRow[]>(
+      'SELECT COUNT(*) AS count FROM places WHERE name = ?',
+      [payload.placeName],
+    );
+    expect(Number(beforePlaces[0]?.count)).toBe(0);
+    const approved = await admin
+      .post(`/api/v1/admin/contributions/${contributionId}/approve`)
+      .set('Origin', 'http://localhost:3001')
+      .set('Idempotency-Key', `approve-${createUlid()}`)
+      .send({
+        expectedVersion: reclaimed.body.data.contribution.version,
+        location: {
+          city: 'Jakarta Barat',
+          district: 'Tambora',
+          latitude: -6.1468,
+          longitude: 106.8061,
+          postalCode: '11220',
+          province: 'DKI Jakarta',
+        },
+        publicationTarget: { mode: 'CREATE_NEW' },
+      })
+      .expect(200);
+    expect(approved.body.data.contribution).toMatchObject({
+      status: 'APPROVED',
+      verifiedLocation: { latitude: -6.1468, longitude: 106.8061 },
+    });
+    const [approvedPlaces] = await pool.execute<CountRow[]>(
+      'SELECT COUNT(*) AS count FROM places WHERE name = ?',
+      [payload.placeName],
+    );
+    expect(Number(approvedPlaces[0]?.count)).toBe(0);
+
+    await pool.query('DROP TRIGGER IF EXISTS phase8_force_audit_failure');
+    await pool.query(
+      `CREATE TRIGGER phase8_force_audit_failure
+       BEFORE INSERT ON audit_logs
+       FOR EACH ROW
+       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'phase8 rollback test'`,
+    );
+    try {
+      await admin
+        .post(`/api/v1/admin/contributions/${contributionId}/merge`)
+        .set('Origin', 'http://localhost:3001')
+        .set('Idempotency-Key', `merge-rollback-${createUlid()}`)
+        .send({ expectedVersion: approved.body.data.contribution.version })
+        .expect(500);
+    } finally {
+      await pool.query('DROP TRIGGER IF EXISTS phase8_force_audit_failure');
+    }
+    const [rolledBackPlaces] = await pool.execute<CountRow[]>(
+      'SELECT COUNT(*) AS count FROM places WHERE name = ?',
+      [payload.placeName],
+    );
+    expect(Number(rolledBackPlaces[0]?.count)).toBe(0);
+    const [rolledBackContribution] = await pool.execute<
+      (RowDataPacket & { readonly contribution_status: string; readonly version: number })[]
+    >(
+      `SELECT contribution_status, version FROM contributions
+       WHERE id = ?`,
+      [contributionId],
+    );
+    expect(rolledBackContribution[0]).toMatchObject({
+      contribution_status: 'APPROVED',
+      version: approved.body.data.contribution.version,
+    });
+
+    const mergeKey = `merge-${createUlid()}`;
+    const merged = await admin
+      .post(`/api/v1/admin/contributions/${contributionId}/merge`)
+      .set('Origin', 'http://localhost:3001')
+      .set('Idempotency-Key', mergeKey)
+      .send({ expectedVersion: approved.body.data.contribution.version })
+      .expect(200);
+    expect(merged.body.data).toMatchObject({
+      replayed: false,
+      contribution: { status: 'MERGED' },
+      placeId: expect.any(String),
+      placeSlug: expect.any(String),
+    });
+
+    const mergeReplay = await admin
+      .post(`/api/v1/admin/contributions/${contributionId}/merge`)
+      .set('Origin', 'http://localhost:3001')
+      .set('Idempotency-Key', mergeKey)
+      .send({ expectedVersion: approved.body.data.contribution.version })
+      .expect(200);
+    expect(mergeReplay.body.data.replayed).toBe(true);
+    const doubleMerge = await admin
+      .post(`/api/v1/admin/contributions/${contributionId}/merge`)
+      .set('Origin', 'http://localhost:3001')
+      .set('Idempotency-Key', `merge-again-${createUlid()}`)
+      .send({ expectedVersion: approved.body.data.contribution.version })
+      .expect(200);
+    expect(doubleMerge.body.data).toMatchObject({
+      replayed: true,
+      placeId: merged.body.data.placeId,
+    });
+
+    const [places] = await pool.execute<PublishedPlaceRow[]>(
+      `SELECT id, slug, place_status, verification_status
+       FROM places WHERE name = ?`,
+      [payload.placeName],
+    );
+    expect(places).toHaveLength(1);
+    expect(places[0]).toMatchObject({
+      id: merged.body.data.placeId,
+      place_status: 'ACTIVE',
+      verification_status: 'ADMIN_VERIFIED',
+    });
+    const [events] = await pool.execute<CountRow[]>(
+      'SELECT COUNT(*) AS count FROM moderation_events WHERE contribution_id = ?',
+      [contributionId],
+    );
+    expect(Number(events[0]?.count)).toBe(4);
+    const [audits] = await pool.execute<CountRow[]>(
+      `SELECT COUNT(*) AS count FROM audit_logs
+       WHERE target_type = 'PLACE' AND target_id = ?`,
+      [merged.body.data.placeId],
+    );
+    expect(Number(audits[0]?.count)).toBe(1);
+
+    await request(server)
+      .get(`/api/v1/public/places/${merged.body.data.placeSlug}`)
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.data).toMatchObject({
+          latitude: -6.1468,
+          longitude: 106.8061,
+          name: payload.placeName,
+          placeStatus: 'ACTIVE',
+          verificationStatus: 'ADMIN_VERIFIED',
+        });
+      });
+
+    await pool.execute("DELETE FROM idempotency_keys WHERE scope LIKE CONCAT('%', ?, '%')", [
+      contributionId,
+    ]);
+    await pool.execute('DELETE FROM moderation_events WHERE contribution_id = ?', [contributionId]);
+    await pool.execute('DELETE FROM contributions WHERE id = ?', [contributionId]);
+    await pool.execute('DELETE FROM audit_logs WHERE target_id = ?', [merged.body.data.placeId]);
+    await pool.execute('DELETE FROM place_change_history WHERE place_id = ?', [
+      merged.body.data.placeId,
+    ]);
+    await pool.execute('DELETE FROM operating_hours WHERE place_id = ?', [
+      merged.body.data.placeId,
+    ]);
+    await pool.execute('DELETE FROM place_facilities WHERE place_id = ?', [
+      merged.body.data.placeId,
+    ]);
+    await pool.execute('DELETE FROM place_categories WHERE place_id = ?', [
+      merged.body.data.placeId,
+    ]);
+    await pool.execute('DELETE FROM menus WHERE place_id = ?', [merged.body.data.placeId]);
+    await pool.execute('DELETE FROM places WHERE id = ?', [merged.body.data.placeId]);
+  }, 60_000);
 
   it('normalizes requests, prevents enumeration, rejects open redirects, and rate limits by email', async () => {
     const redisService = getApp().get(RedisService);
@@ -431,6 +757,14 @@ describe.sequential('public and Phase 6 authentication API', () => {
         '/api/v1/contributions',
         '/api/v1/contributions/{id}',
         '/api/v1/contributions/{id}/submit',
+        '/api/v1/admin/dashboard',
+        '/api/v1/admin/contributions',
+        '/api/v1/admin/contributions/{id}',
+        '/api/v1/admin/contributions/{id}/claim',
+        '/api/v1/admin/contributions/{id}/needs-revision',
+        '/api/v1/admin/contributions/{id}/reject',
+        '/api/v1/admin/contributions/{id}/approve',
+        '/api/v1/admin/contributions/{id}/merge',
       ]),
     );
   });

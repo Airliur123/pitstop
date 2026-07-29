@@ -37,11 +37,13 @@ export type Status =
   | 'reviewing'
   | 'revision'
   | 'approved'
-  | 'rejected';
+  | 'rejected'
+  | 'merged';
 
 const statusContent: Record<Status, { label: string; tone: NonNullable<BadgeProps['tone']> }> = {
   approved: { label: 'Disetujui', tone: 'success' },
   closed: { label: 'Tutup', tone: 'neutral' },
+  merged: { label: 'Dipublikasikan', tone: 'success' },
   open: { label: 'Buka', tone: 'success' },
   pending: { label: 'Menunggu pemeriksaan', tone: 'warning' },
   rejected: { label: 'Ditolak', tone: 'danger' },

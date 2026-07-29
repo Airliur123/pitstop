@@ -13,6 +13,7 @@ describe('database foundation', () => {
       uri: 'mysql://pitstop:local@localhost:3306/pitstop',
       connectionLimit: 10,
       enableKeepAlive: true,
+      timezone: 'Z',
     });
   });
 

@@ -16,6 +16,13 @@ interface PlaceMetadataRow extends RowDataPacket {
   readonly indexType: string;
 }
 
+interface ModerationMetadataRow extends RowDataPacket {
+  readonly columnCount: number;
+  readonly eventTableCount: number;
+  readonly indexCount: number;
+  readonly verifiedSrid: number;
+}
+
 loadWorkspaceEnvironment(fileURLToPath(new URL('../../../../', import.meta.url)));
 const pool = createDatabasePool(createDatabaseConnectionConfig(process.env));
 
@@ -26,7 +33,7 @@ try {
      WHERE table_schema = DATABASE() AND table_name <> '__drizzle_migrations'`,
   );
   const tableCount = Number(tableRows[0]?.count ?? 0);
-  if (tableCount !== 29) throw new Error(`Expected 29 domain tables, found ${tableCount}`);
+  if (tableCount !== 30) throw new Error(`Expected 30 domain tables, found ${tableCount}`);
 
   const [metadataRows] = await pool.query<PlaceMetadataRow[]>(
     `SELECT t.engine AS engineValue, t.table_collation AS tableCollation,
@@ -54,6 +61,41 @@ try {
     throw new Error(`Unexpected places index type: ${metadata.indexType}`);
   }
 
+  const [moderationRows] = await pool.query<ModerationMetadataRow[]>(
+    `SELECT
+       (SELECT COUNT(*) FROM information_schema.tables
+        WHERE table_schema = DATABASE() AND table_name = 'moderation_events') AS eventTableCount,
+       (SELECT COUNT(*) FROM information_schema.columns
+        WHERE table_schema = DATABASE() AND table_name = 'contributions'
+          AND column_name IN (
+            'reviewed_by', 'review_claimed_at', 'decision_reason', 'approved_at', 'merged_at',
+            'merged_place_id', 'verified_location', 'verified_district', 'verified_city',
+            'verified_province', 'verified_postal_code'
+          )) AS columnCount,
+       (SELECT COUNT(DISTINCT index_name) FROM information_schema.statistics
+        WHERE table_schema = DATABASE()
+          AND index_name IN (
+            'idx_contributions_queue', 'idx_contributions_reviewer_status',
+            'idx_contributions_merged_place', 'idx_contribution_payloads_category',
+            'idx_contribution_payloads_place_name',
+            'idx_moderation_events_contribution_created',
+            'idx_moderation_events_actor_created', 'idx_moderation_events_recent'
+          )) AS indexCount,
+       (SELECT srs_id FROM information_schema.st_geometry_columns
+        WHERE table_schema = DATABASE() AND table_name = 'contributions'
+          AND column_name = 'verified_location') AS verifiedSrid`,
+  );
+  const moderation = moderationRows[0];
+  if (
+    !moderation ||
+    Number(moderation.eventTableCount) !== 1 ||
+    Number(moderation.columnCount) !== 11 ||
+    Number(moderation.indexCount) !== 8 ||
+    Number(moderation.verifiedSrid) !== 4326
+  ) {
+    throw new Error('Phase 8 moderation schema metadata is incomplete');
+  }
+
   process.stdout.write(
     `Database check passed: ${JSON.stringify({
       tableCount,
@@ -61,6 +103,8 @@ try {
       collation: metadata.tableCollation,
       srid: Number(metadata.srsId),
       spatialIndex: metadata.indexType,
+      moderationIndexes: Number(moderation.indexCount),
+      verifiedLocationSrid: Number(moderation.verifiedSrid),
     })}\n`,
   );
 } finally {

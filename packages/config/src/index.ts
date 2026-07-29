@@ -96,12 +96,36 @@ export const webEnvironmentSchema = z
     }
   });
 
-export const adminEnvironmentSchema = z.object({
-  NODE_ENV: nodeEnvironmentSchema,
-  ADMIN_PORT: portSchema,
-  NEXT_PUBLIC_API_BASE_URL: urlSchema,
-  NEXT_PUBLIC_ENABLE_UI_CATALOG: booleanStringSchema.optional().default(false),
-});
+export const adminEnvironmentSchema = z
+  .object({
+    NODE_ENV: nodeEnvironmentSchema,
+    ADMIN_PORT: portSchema,
+    ADMIN_BASE_URL: urlSchema.optional().default('http://localhost:3001'),
+    NEXT_PUBLIC_API_BASE_URL: urlSchema,
+    NEXT_PUBLIC_ENABLE_UI_CATALOG: booleanStringSchema.optional().default(false),
+  })
+  .superRefine((environment, context) => {
+    if (
+      environment.NODE_ENV === 'production' &&
+      isLocalHostname(new URL(environment.NEXT_PUBLIC_API_BASE_URL).hostname)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['NEXT_PUBLIC_API_BASE_URL'],
+        message: 'Production API base URL cannot use localhost',
+      });
+    }
+    if (
+      environment.NODE_ENV === 'production' &&
+      isLocalHostname(new URL(environment.ADMIN_BASE_URL).hostname)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['ADMIN_BASE_URL'],
+        message: 'Production admin base URL cannot use localhost',
+      });
+    }
+  });
 
 export const apiEnvironmentSchema = z
   .object({
@@ -119,6 +143,7 @@ export const apiEnvironmentSchema = z
     API_BODY_LIMIT_BYTES: positiveIntegerEnvironmentSchema.optional().default(1_048_576),
     API_MAX_QUERY_LENGTH: positiveIntegerEnvironmentSchema.optional().default(2_048),
     WEB_BASE_URL: urlSchema.optional().default('http://localhost:3000'),
+    ADMIN_BASE_URL: urlSchema.optional().default('http://localhost:3001'),
     DATABASE_URL: urlSchema,
     REDIS_URL: urlSchema,
     REDIS_CACHE_ENABLED: booleanStringSchema.optional().default(true),
@@ -168,6 +193,21 @@ export const apiEnvironmentSchema = z
       .max(1_000)
       .optional()
       .default(30),
+    ADMIN_RATE_LIMIT_WINDOW_SECONDS: positiveIntegerEnvironmentSchema
+      .min(10)
+      .max(3_600)
+      .optional()
+      .default(60),
+    ADMIN_READ_RATE_LIMIT_MAX: positiveIntegerEnvironmentSchema
+      .min(10)
+      .max(10_000)
+      .optional()
+      .default(240),
+    ADMIN_MUTATION_RATE_LIMIT_MAX: positiveIntegerEnvironmentSchema
+      .min(1)
+      .max(1_000)
+      .optional()
+      .default(60),
     AUTH_TOKEN_SECRET: authenticationSecretSchema.optional(),
     AUTH_SESSION_SECRET: authenticationSecretSchema.optional(),
     AUTH_COOKIE_SECURE: booleanStringSchema.optional().default(false),
@@ -252,6 +292,13 @@ export const apiEnvironmentSchema = z
           code: 'custom',
           path: ['WEB_BASE_URL'],
           message: 'Production web base URL cannot use localhost',
+        });
+      }
+      if (isLocalHostname(new URL(environment.ADMIN_BASE_URL).hostname)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['ADMIN_BASE_URL'],
+          message: 'Production admin base URL cannot use localhost',
         });
       }
       if (isLocalHostname(environment.MAIL_HOST)) {

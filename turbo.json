@@ -2,6 +2,7 @@
   "$schema": "https://turborepo.com/schema.json",
   "globalEnv": [
     "NODE_ENV",
+    "ADMIN_BASE_URL",
     "NEXT_PUBLIC_API_BASE_URL",
     "NEXT_PUBLIC_ENABLE_UI_CATALOG",
     "NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_ENABLED",

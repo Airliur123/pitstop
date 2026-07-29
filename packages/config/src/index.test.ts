@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseApiEnvironment, parseWebEnvironment } from './index';
+import { parseAdminEnvironment, parseApiEnvironment, parseWebEnvironment } from './index';
 
 const validEnvironment: NodeJS.ProcessEnv = {
   NODE_ENV: 'test',
@@ -69,6 +69,7 @@ describe('API environment parser', () => {
         AUTH_SESSION_SECRET: 'production-session-secret-0123456789',
         AUTH_COOKIE_SECURE: 'true',
         WEB_BASE_URL: 'https://pitstop.example',
+        ADMIN_BASE_URL: 'https://admin.pitstop.example',
         MAIL_HOST: 'smtp.example',
       }).PUBLIC_CURSOR_SIGNING_SECRET,
     ).toBe('production-cursor-signing-secret-0123456789');
@@ -136,5 +137,38 @@ describe('web environment parser', () => {
     expect(() => parseWebEnvironment({ ...webEnvironment, NODE_ENV: 'production' })).toThrow(
       /Production API base URL cannot use localhost/,
     );
+  });
+});
+
+describe('admin environment parser', () => {
+  it('accepts separately hosted admin and API origins', () => {
+    const parsed = parseAdminEnvironment({
+      ADMIN_BASE_URL: 'https://admin.example.test',
+      ADMIN_PORT: '3001',
+      NEXT_PUBLIC_API_BASE_URL: 'https://api.example.test/api/v1',
+      NODE_ENV: 'production',
+    });
+
+    expect(parsed.ADMIN_BASE_URL).toBe('https://admin.example.test');
+    expect(parsed.NEXT_PUBLIC_API_BASE_URL).toBe('https://api.example.test/api/v1');
+  });
+
+  it('rejects localhost admin and API URLs in production', () => {
+    expect(() =>
+      parseAdminEnvironment({
+        ADMIN_BASE_URL: 'https://admin.example.test',
+        ADMIN_PORT: '3001',
+        NEXT_PUBLIC_API_BASE_URL: 'http://localhost:3002/api/v1',
+        NODE_ENV: 'production',
+      }),
+    ).toThrow(/Production API base URL cannot use localhost/);
+    expect(() =>
+      parseAdminEnvironment({
+        ADMIN_BASE_URL: 'http://localhost:3001',
+        ADMIN_PORT: '3001',
+        NEXT_PUBLIC_API_BASE_URL: 'https://api.example.test/api/v1',
+        NODE_ENV: 'production',
+      }),
+    ).toThrow(/Production admin base URL cannot use localhost/);
   });
 });

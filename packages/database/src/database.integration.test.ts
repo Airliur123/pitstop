@@ -54,6 +54,7 @@ const expectedTables = [
   'idempotency_keys',
   'integration_sources',
   'menus',
+  'moderation_events',
   'moderation_reviews',
   'operating_hour_exceptions',
   'operating_hours',
@@ -121,7 +122,7 @@ describe.sequential('MySQL 8.4 spatial database', () => {
   it('1. migrates an empty MySQL database', async () => {
     expect(
       await countRows(getPool(), 'information_schema.tables', 'table_schema = DATABASE()'),
-    ).toBe(30);
+    ).toBe(31);
   });
 
   it('2. runs migration again without schema drift', async () => {
@@ -131,7 +132,7 @@ describe.sequential('MySQL 8.4 spatial database', () => {
     const [rows] = await getPool().query<CountRow[]>(
       'SELECT COUNT(*) AS count FROM __drizzle_migrations',
     );
-    expect(Number(rows[0]?.count)).toBe(7);
+    expect(Number(rows[0]?.count)).toBe(8);
   });
 
   it('3. creates every required domain table', async () => {
@@ -344,6 +345,73 @@ describe.sequential('MySQL 8.4 spatial database', () => {
     expect(immutable.affectedRows).toBe(0);
     await getPool().execute('DELETE FROM contributions WHERE id = ?', [contributionId]);
     await getPool().execute('DELETE FROM users WHERE id IN (?, ?)', [ownerId, strangerId]);
+  });
+
+  it('6g. creates moderation queue, reviewer, event, and SRID indexes', async () => {
+    const [indexes] = await getPool().query<StringRow[]>(
+      `SELECT index_name AS value FROM information_schema.statistics
+       WHERE table_schema = DATABASE()
+         AND table_name IN ('contributions', 'contribution_payloads', 'moderation_events')`,
+    );
+    expect(indexes.map((row) => row.value)).toEqual(
+      expect.arrayContaining([
+        'idx_contributions_queue',
+        'idx_contributions_reviewer_status',
+        'idx_contribution_payloads_category',
+        'idx_contribution_payloads_place_name',
+        'idx_moderation_events_contribution_created',
+        'idx_moderation_events_recent',
+      ]),
+    );
+    const [spatial] = await getPool().query<NumberRow[]>(
+      `SELECT srs_id AS value
+       FROM information_schema.st_geometry_columns
+       WHERE table_schema = DATABASE()
+         AND table_name = 'contributions'
+         AND column_name = 'verified_location'`,
+    );
+    expect(Number(spatial[0]?.value)).toBe(4326);
+
+    const contributionId = createUlid();
+    const actorId = await insertUser(getPool(), uniqueEmail('moderation-event'));
+    await getPool().execute(
+      `INSERT INTO contributions (
+         id, submitted_by, source, contribution_status, submitted_at, reviewed_by,
+         review_claimed_at, version
+       ) VALUES (?, ?, 'APPLICATION', 'IN_REVIEW', CURRENT_TIMESTAMP(3), ?,
+         CURRENT_TIMESTAMP(3), 2)`,
+      [contributionId, actorId, actorId],
+    );
+    await getPool().execute(
+      `INSERT INTO contribution_payloads (contribution_id, schema_version, payload)
+       VALUES (?, 1, JSON_OBJECT(
+         'placeName', 'Moderation index test',
+         'address', 'Jl. Test',
+         'category', 'TOILET'
+       ))`,
+      [contributionId],
+    );
+    await getPool().execute(
+      `INSERT INTO moderation_events (
+         id, contribution_id, actor_admin_id, previous_status, next_status,
+         action, contribution_version
+       ) VALUES (?, ?, ?, 'PENDING', 'IN_REVIEW', 'CLAIM', 2)`,
+      [createUlid(), contributionId, actorId],
+    );
+    await expect(
+      getPool().execute(
+        `INSERT INTO moderation_events (
+           id, contribution_id, actor_admin_id, previous_status, next_status,
+           action, contribution_version
+         ) VALUES (?, ?, ?, 'IN_REVIEW', 'APPROVED', 'APPROVE', 3)`,
+        [createUlid(), contributionId, createUlid()],
+      ),
+    ).rejects.toMatchObject({ code: 'ER_NO_REFERENCED_ROW_2' });
+    await getPool().execute('DELETE FROM moderation_events WHERE contribution_id = ?', [
+      contributionId,
+    ]);
+    await getPool().execute('DELETE FROM contributions WHERE id = ?', [contributionId]);
+    await getPool().execute('DELETE FROM users WHERE id = ?', [actorId]);
   });
 
   it('7. enforces Google Form submission idempotency', async () => {

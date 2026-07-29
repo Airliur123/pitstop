@@ -27,6 +27,9 @@ export default defineConfig({
         PUBLIC_RATE_LIMIT_MAX: '1000',
         RECOMMENDATION_RATE_LIMIT_MAX: '1000',
         WEB_BASE_URL: 'http://localhost:3100',
+        ADMIN_BASE_URL: 'http://localhost:3101',
+        ADMIN_READ_RATE_LIMIT_MAX: '1000',
+        ADMIN_MUTATION_RATE_LIMIT_MAX: '1000',
       },
       reuseExistingServer: false,
       timeout: 120_000,
@@ -50,7 +53,12 @@ export default defineConfig({
     },
     {
       command: 'pnpm --filter @pitstop/admin exec next dev --port 3101',
-      env: { NEXT_PUBLIC_ENABLE_UI_CATALOG: 'true', PITSTOP_E2E: 'true' },
+      env: {
+        ADMIN_BASE_URL: 'http://localhost:3101',
+        NEXT_PUBLIC_API_BASE_URL: 'http://localhost:3102/api/v1',
+        NEXT_PUBLIC_ENABLE_UI_CATALOG: 'true',
+        PITSTOP_E2E: 'true',
+      },
       reuseExistingServer: false,
       timeout: 120_000,
       url: 'http://localhost:3101',
@@ -62,29 +70,38 @@ export default defineConfig({
   },
   projects: [
     {
-      grepInvert: /@guest-core|@auth-core|@contribution-core/,
+      grepInvert: /@guest-core|@auth-core|@contribution-core|@admin-core/,
       name: 'mobile-320',
       use: { viewport: { height: 568, width: 320 } },
     },
     {
-      grepInvert: /@guest-core|@auth-core|@contribution-core/,
+      grepInvert: /@guest-core|@auth-core|@contribution-core|@admin-core/,
       name: 'mobile-360',
       use: { viewport: { height: 800, width: 360 } },
     },
-    { name: 'mobile-390', use: { viewport: { height: 844, width: 390 } } },
     {
-      grepInvert: /@guest-core|@auth-core|@contribution-core/,
+      grepInvert: /@admin-core/,
+      name: 'mobile-390',
+      use: { viewport: { height: 844, width: 390 } },
+    },
+    {
+      grepInvert: /@guest-core|@auth-core|@contribution-core|@admin-core/,
       name: 'mobile-430',
       use: { viewport: { height: 932, width: 430 } },
     },
     {
-      grepInvert: /@guest-core|@auth-core|@contribution-core/,
+      grepInvert: /@guest-core|@auth-core|@contribution-core|@admin-core/,
       name: 'tablet-768',
       use: { viewport: { height: 1024, width: 768 } },
     },
     {
-      grepInvert: /@guest-core|@auth-core|@contribution-core/,
+      grepInvert: /@guest-core|@auth-core|@contribution-core|@admin-core/,
       name: 'desktop-1280',
+      use: { viewport: { height: 800, width: 1280 } },
+    },
+    {
+      grep: /@admin-core/,
+      name: 'admin-desktop-1280',
       use: { viewport: { height: 800, width: 1280 } },
     },
   ],
