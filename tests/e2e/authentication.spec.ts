@@ -91,13 +91,16 @@ test('@auth-core guest signs in from a protected route, keeps an HttpOnly sessio
 }) => {
   const email = `e2e-auth-${Date.now()}@example.test`;
   await page.goto('/activity');
+  await expect(page).toHaveURL('/activity');
+  await expect(page.getByText('Aktivitas tersimpan di akun')).toBeVisible();
+  await page.getByRole('link', { name: 'Masuk', exact: true }).click();
   await expect(page).toHaveURL(/\/login\?returnTo=%2Factivity$/);
   await requestLink(page, email);
 
   const token = await magicToken(request, email);
   await page.goto(`/auth/verify?token=${token}`);
   await expect(page).toHaveURL('/activity');
-  await expect(page.getByRole('heading', { name: 'Aktivitas' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Aktivitas', exact: true })).toBeVisible();
   await expect(page).not.toHaveURL(/token=/);
   expect(await page.evaluate(() => document.cookie)).not.toContain('pitstop_session');
   const sessionCookie = (await page.context().cookies()).find(
@@ -106,7 +109,7 @@ test('@auth-core guest signs in from a protected route, keeps an HttpOnly sessio
   expect(sessionCookie).toMatchObject({ httpOnly: true, sameSite: 'Lax' });
 
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Aktivitas' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Aktivitas', exact: true })).toBeVisible();
   const axe = await new AxeBuilder({ page }).include('main').analyze();
   expect(
     axe.violations.filter(
@@ -115,7 +118,8 @@ test('@auth-core guest signs in from a protected route, keeps an HttpOnly sessio
   ).toEqual([]);
 
   await page.getByRole('button', { name: 'Keluar' }).click();
-  await expect(page).toHaveURL(/\/login\?returnTo=%2Factivity$/);
+  await expect(page).toHaveURL('/activity');
+  await expect(page.getByText('Aktivitas tersimpan di akun')).toBeVisible();
   expect((await page.context().cookies()).some((cookie) => cookie.name === 'pitstop_session')).toBe(
     false,
   );
@@ -138,7 +142,8 @@ test('@auth-core expired links and external return destinations fail safely', as
   await expect(page.getByRole('heading', { name: 'Ceritakan tempatnya' })).toBeVisible();
   await page.goto('/activity');
   await page.getByRole('button', { name: 'Keluar' }).click();
-  await expect(page).toHaveURL(/\/login\?returnTo=%2Factivity$/);
+  await expect(page).toHaveURL('/activity');
+  await expect(page.getByText('Aktivitas tersimpan di akun')).toBeVisible();
 
   const expiredEmail = `e2e-expired-${Date.now()}@example.test`;
   await page.goto('/login?returnTo=/contribute');

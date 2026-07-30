@@ -247,6 +247,8 @@ describe.sequential('public, authentication, contribution, and moderation API', 
 
   it('enforces admin role and transactionally moderates, approves, and publishes once', async () => {
     const server = getApp().getHttpServer();
+    const moderatedLatitude = -6.2468;
+    const moderatedLongitude = 106.8061;
     await request(server).get('/api/v1/admin/dashboard').expect(401);
 
     const contributorEmail = `contributor-${createUlid().toLowerCase()}@example.test`;
@@ -412,8 +414,8 @@ describe.sequential('public, authentication, contribution, and moderation API', 
         location: {
           city: 'Jakarta Barat',
           district: 'Tambora',
-          latitude: -6.1468,
-          longitude: 106.8061,
+          latitude: moderatedLatitude,
+          longitude: moderatedLongitude,
           postalCode: '11220',
           province: 'DKI Jakarta',
         },
@@ -422,7 +424,7 @@ describe.sequential('public, authentication, contribution, and moderation API', 
       .expect(200);
     expect(approved.body.data.contribution).toMatchObject({
       status: 'APPROVED',
-      verifiedLocation: { latitude: -6.1468, longitude: 106.8061 },
+      verifiedLocation: { latitude: moderatedLatitude, longitude: moderatedLongitude },
     });
     const [approvedPlaces] = await pool.execute<CountRow[]>(
       'SELECT COUNT(*) AS count FROM places WHERE name = ?',
@@ -524,8 +526,8 @@ describe.sequential('public, authentication, contribution, and moderation API', 
       .expect(200)
       .expect((response) => {
         expect(response.body.data).toMatchObject({
-          latitude: -6.1468,
-          longitude: 106.8061,
+          latitude: moderatedLatitude,
+          longitude: moderatedLongitude,
           name: payload.placeName,
           placeStatus: 'ACTIVE',
           verificationStatus: 'ADMIN_VERIFIED',
@@ -537,21 +539,8 @@ describe.sequential('public, authentication, contribution, and moderation API', 
     ]);
     await pool.execute('DELETE FROM moderation_events WHERE contribution_id = ?', [contributionId]);
     await pool.execute('DELETE FROM contributions WHERE id = ?', [contributionId]);
-    await pool.execute('DELETE FROM audit_logs WHERE target_id = ?', [merged.body.data.placeId]);
-    await pool.execute('DELETE FROM place_change_history WHERE place_id = ?', [
-      merged.body.data.placeId,
-    ]);
-    await pool.execute('DELETE FROM operating_hours WHERE place_id = ?', [
-      merged.body.data.placeId,
-    ]);
-    await pool.execute('DELETE FROM place_facilities WHERE place_id = ?', [
-      merged.body.data.placeId,
-    ]);
-    await pool.execute('DELETE FROM place_categories WHERE place_id = ?', [
-      merged.body.data.placeId,
-    ]);
-    await pool.execute('DELETE FROM menus WHERE place_id = ?', [merged.body.data.placeId]);
-    await pool.execute('DELETE FROM places WHERE id = ?', [merged.body.data.placeId]);
+    // The published Place and its governance records intentionally remain in the disposable
+    // integration database. Phase 10 makes audit_logs and place_change_history append-only.
   }, 60_000);
 
   it('normalizes requests, prevents enumeration, rejects open redirects, and rate limits by email', async () => {
@@ -982,6 +971,16 @@ describe.sequential('public, authentication, contribution, and moderation API', 
         '/api/v1/admin/integrations/google-form/submissions',
         '/api/v1/admin/integrations/google-form/submissions/{id}',
         '/api/v1/admin/integrations/google-form/submissions/{id}/replay',
+        '/api/v1/places/{id}/reports',
+        '/api/v1/reports/{id}',
+        '/api/v1/places/{id}/confirmations',
+        '/api/v1/activity',
+        '/api/v1/admin/reports',
+        '/api/v1/admin/reports/{id}',
+        '/api/v1/admin/reports/{id}/claim',
+        '/api/v1/admin/reports/{id}/apply',
+        '/api/v1/admin/reports/{id}/reject',
+        '/api/v1/admin/audit',
       ]),
     );
   });
@@ -1170,6 +1169,316 @@ describe.sequential('public, authentication, contribution, and moderation API', 
       .expect(409);
     expect(immutable.body.code).toBe('CONTRIBUTION_INVALID_STATE');
   });
+
+  it('runs the owned report, admin decision, confirmation, Activity, history, and audit flow', async () => {
+    const server = getApp().getHttpServer();
+    const redisService = getApp().get(RedisService);
+    await redisService.run((client) => client.flushdb());
+    const ownerPrefix = `phase10-owner-${createUlid().toLowerCase()}`;
+    const strangerPrefix = `phase10-stranger-${createUlid().toLowerCase()}`;
+    const adminPrefix = `phase10-admin-${createUlid().toLowerCase()}`;
+    const competingAdminPrefix = `phase10-admin-other-${createUlid().toLowerCase()}`;
+    const owner = await authenticatedAgent(ownerPrefix);
+    const stranger = await authenticatedAgent(strangerPrefix);
+    const admin = await authenticatedAgent(adminPrefix);
+    const competingAdmin = await authenticatedAgent(competingAdminPrefix);
+    if (!pool) throw new Error('Integration pool is not initialized');
+    for (const email of [`${adminPrefix}@example.test`, `${competingAdminPrefix}@example.test`]) {
+      await pool.execute(
+        `INSERT INTO user_roles (user_id, role_id)
+         SELECT u.id, r.id FROM users u JOIN roles r ON r.code = 'ADMIN'
+         WHERE u.normalized_email = ?
+         ON DUPLICATE KEY UPDATE assigned_at = assigned_at`,
+        [email],
+      );
+    }
+
+    const initialPlace = await request(server)
+      .get('/api/v1/public/places/data-simulasi-warung-bu-ani')
+      .expect(200);
+    const placeId = String(initialPlace.body.data.id);
+    const initialName = String(initialPlace.body.data.name);
+    const proposedName = `Data Simulasi Phase 10 ${createUlid()}`;
+    const reportBody = {
+      expectedPlaceVersion: Number(initialPlace.body.data.version),
+      explanation: 'Nama Place ini perlu dikoreksi berdasarkan papan nama terbaru.',
+      proposedChange: { kind: 'OTHER', name: proposedName },
+      reportType: 'OTHER',
+    };
+
+    await owner
+      .post(`/api/v1/places/${placeId}/reports`)
+      .set('Idempotency-Key', 'phase10-report-no-csrf')
+      .send(reportBody)
+      .expect(403);
+    const invalidMarkup = await owner
+      .post(`/api/v1/places/${placeId}/reports`)
+      .set('Origin', 'http://localhost:3000')
+      .set('Idempotency-Key', 'phase10-report-invalid')
+      .send({ ...reportBody, explanation: '<strong>perubahan</strong>' })
+      .expect(400);
+    expect(invalidMarkup.body).toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
+
+    const createKey = `phase10-report-${createUlid()}`;
+    const created = await owner
+      .post(`/api/v1/places/${placeId}/reports`)
+      .set('Origin', 'http://localhost:3000')
+      .set('Idempotency-Key', createKey)
+      .send(reportBody)
+      .expect(201);
+    expect(created.headers['cache-control']).toContain('no-store');
+    expect(created.body.data).toMatchObject({
+      reportType: 'OTHER',
+      status: 'PENDING',
+      proposal: { kind: 'OTHER', name: proposedName },
+    });
+    const reportId = String(created.body.data.id);
+    const replay = await owner
+      .post(`/api/v1/places/${placeId}/reports`)
+      .set('Origin', 'http://localhost:3000')
+      .set('Idempotency-Key', createKey)
+      .send(reportBody)
+      .expect(201);
+    expect(replay.body.data.id).toBe(reportId);
+    expect(
+      await apiScalarCount('SELECT COUNT(*) AS count FROM place_reports WHERE id = ?', [reportId]),
+    ).toBe(1);
+
+    const hidden = await stranger.get(`/api/v1/reports/${reportId}`).expect(404);
+    expect(hidden.body.code).toBe('REPORT_NOT_FOUND');
+    const ownedPending = await owner.get(`/api/v1/reports/${reportId}`).expect(200);
+    expect(ownedPending.headers['cache-control']).toContain('no-store');
+    expect(ownedPending.text).not.toContain('request_hash');
+    await owner.get('/api/v1/admin/reports').expect(403);
+
+    const queue = await admin
+      .get('/api/v1/admin/reports')
+      .query({ reportType: 'OTHER', status: 'PENDING' })
+      .expect(200);
+    expect(queue.headers['cache-control']).toContain('no-store');
+    expect(queue.body.data.items).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: reportId, status: 'PENDING' })]),
+    );
+    const adminDetail = await admin.get(`/api/v1/admin/reports/${reportId}`).expect(200);
+    expect(adminDetail.body.data).toMatchObject({
+      currentPlace: { name: initialName },
+      proposal: { kind: 'OTHER', name: proposedName },
+      reporter: { maskedEmail: expect.stringContaining('*') },
+    });
+
+    await admin
+      .post(`/api/v1/admin/reports/${reportId}/claim`)
+      .set('Idempotency-Key', `phase10-claim-no-csrf-${createUlid()}`)
+      .send({ expectedVersion: created.body.data.version })
+      .expect(403);
+    const claimKey = `phase10-claim-${createUlid()}`;
+    const claimed = await admin
+      .post(`/api/v1/admin/reports/${reportId}/claim`)
+      .set('Origin', 'http://localhost:3001')
+      .set('Idempotency-Key', claimKey)
+      .send({ expectedVersion: created.body.data.version })
+      .expect(200);
+    expect(claimed.body.data).toMatchObject({
+      replayed: false,
+      report: { status: 'IN_REVIEW' },
+    });
+    const claimReplay = await admin
+      .post(`/api/v1/admin/reports/${reportId}/claim`)
+      .set('Origin', 'http://localhost:3001')
+      .set('Idempotency-Key', claimKey)
+      .send({ expectedVersion: created.body.data.version })
+      .expect(200);
+    expect(claimReplay.body.data.replayed).toBe(true);
+    const competingClaim = await competingAdmin
+      .post(`/api/v1/admin/reports/${reportId}/claim`)
+      .set('Origin', 'http://localhost:3001')
+      .set('Idempotency-Key', `phase10-compete-${createUlid()}`)
+      .send({ expectedVersion: claimed.body.data.report.version })
+      .expect(409);
+    expect(competingClaim.body.code).toBe('REPORT_CLAIM_CONFLICT');
+
+    const applyBody = {
+      approvedPatch: { kind: 'OTHER', name: proposedName },
+      expectedPlaceVersion: claimed.body.data.report.currentPlace.version,
+      expectedReportVersion: claimed.body.data.report.version,
+      resolution: 'Nama disetujui setelah membandingkan bukti faktual.',
+    };
+    const staleApply = await admin
+      .post(`/api/v1/admin/reports/${reportId}/apply`)
+      .set('Origin', 'http://localhost:3001')
+      .set('Idempotency-Key', `phase10-apply-stale-${createUlid()}`)
+      .send({ ...applyBody, expectedPlaceVersion: 999_999 })
+      .expect(409);
+    expect(staleApply.body.code).toBe('VERSION_CONFLICT');
+
+    await pool.query('DROP TRIGGER IF EXISTS phase10_force_history_failure');
+    await pool.query(
+      `CREATE TRIGGER phase10_force_history_failure
+       BEFORE INSERT ON place_change_history
+       FOR EACH ROW
+       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'phase10 rollback test'`,
+    );
+    try {
+      await admin
+        .post(`/api/v1/admin/reports/${reportId}/apply`)
+        .set('Origin', 'http://localhost:3001')
+        .set('Idempotency-Key', `phase10-apply-rollback-${createUlid()}`)
+        .send(applyBody)
+        .expect(500);
+    } finally {
+      await pool.query('DROP TRIGGER IF EXISTS phase10_force_history_failure');
+    }
+    const afterRollback = await admin.get(`/api/v1/admin/reports/${reportId}`).expect(200);
+    expect(afterRollback.body.data).toMatchObject({
+      currentPlace: { name: initialName, version: applyBody.expectedPlaceVersion },
+      status: 'IN_REVIEW',
+      version: applyBody.expectedReportVersion,
+    });
+
+    const applyKey = `phase10-apply-${createUlid()}`;
+    const applied = await admin
+      .post(`/api/v1/admin/reports/${reportId}/apply`)
+      .set('Origin', 'http://localhost:3001')
+      .set('Idempotency-Key', applyKey)
+      .send(applyBody)
+      .expect(200);
+    expect(applied.body.data).toMatchObject({
+      replayed: false,
+      report: {
+        resolution: applyBody.resolution,
+        status: 'APPLIED',
+      },
+    });
+    const applyReplay = await admin
+      .post(`/api/v1/admin/reports/${reportId}/apply`)
+      .set('Origin', 'http://localhost:3001')
+      .set('Idempotency-Key', applyKey)
+      .send(applyBody)
+      .expect(200);
+    expect(applyReplay.body.data.replayed).toBe(true);
+    const publicAfterApply = await request(server)
+      .get('/api/v1/public/places/data-simulasi-warung-bu-ani')
+      .expect(200);
+    expect(publicAfterApply.body.data).toMatchObject({
+      name: proposedName,
+      verificationStatus: 'ADMIN_VERIFIED',
+    });
+    expect(publicAfterApply.body.data.version).toBe(applyBody.expectedPlaceVersion + 1);
+    expect(
+      await apiScalarCount(
+        'SELECT COUNT(*) AS count FROM place_change_history WHERE source_type = ? AND source_id = ?',
+        ['REPORT', reportId],
+      ),
+    ).toBeGreaterThanOrEqual(1);
+    expect(
+      await apiScalarCount(
+        `SELECT COUNT(*) AS count FROM audit_logs
+         WHERE target_type = 'REPORT' AND target_id = ?`,
+        [reportId],
+      ),
+    ).toBeGreaterThanOrEqual(2);
+    const ownedApplied = await owner.get(`/api/v1/reports/${reportId}`).expect(200);
+    expect(ownedApplied.body.data).toMatchObject({
+      resolution: applyBody.resolution,
+      status: 'APPLIED',
+    });
+    expect(ownedApplied.text).not.toContain('"metadata"');
+
+    const rejectedCreated = await owner
+      .post(`/api/v1/places/${placeId}/reports`)
+      .set('Origin', 'http://localhost:3000')
+      .set('Idempotency-Key', `phase10-report-reject-${createUlid()}`)
+      .send({
+        expectedPlaceVersion: publicAfterApply.body.data.version,
+        explanation: 'Harga menu utama tampak berubah dan perlu diperiksa admin.',
+        proposedChange: { kind: 'PRICE_CHANGED', priceAmount: 15_000 },
+        reportType: 'PRICE_CHANGED',
+      })
+      .expect(201);
+    const rejectedId = String(rejectedCreated.body.data.id);
+    const rejectedClaim = await admin
+      .post(`/api/v1/admin/reports/${rejectedId}/claim`)
+      .set('Origin', 'http://localhost:3001')
+      .set('Idempotency-Key', `phase10-claim-reject-${createUlid()}`)
+      .send({ expectedVersion: rejectedCreated.body.data.version })
+      .expect(200);
+    const resolution = 'Bukti belum cukup untuk mengubah harga publik.';
+    const rejected = await admin
+      .post(`/api/v1/admin/reports/${rejectedId}/reject`)
+      .set('Origin', 'http://localhost:3001')
+      .set('Idempotency-Key', `phase10-reject-${createUlid()}`)
+      .send({
+        expectedVersion: rejectedClaim.body.data.report.version,
+        resolution,
+      })
+      .expect(200);
+    expect(rejected.body.data.report).toMatchObject({ resolution, status: 'REJECTED' });
+    expect((await owner.get(`/api/v1/reports/${rejectedId}`).expect(200)).body.data).toMatchObject({
+      resolution,
+      status: 'REJECTED',
+    });
+
+    const currentPlace = await request(server)
+      .get('/api/v1/public/places/data-simulasi-warung-bu-ani')
+      .expect(200);
+    const confirmationBody = {
+      confirmationType: 'STILL_VALID',
+      confirmedAt: new Date().toISOString(),
+      expectedPlaceVersion: currentPlace.body.data.version,
+      note: 'Informasi utama masih sesuai saat kunjungan.',
+    };
+    const confirmationKey = `phase10-confirm-${createUlid()}`;
+    const confirmed = await owner
+      .post(`/api/v1/places/${placeId}/confirmations`)
+      .set('Origin', 'http://localhost:3000')
+      .set('Idempotency-Key', confirmationKey)
+      .send(confirmationBody)
+      .expect(200);
+    expect(confirmed.headers['cache-control']).toContain('no-store');
+    const confirmedReplay = await owner
+      .post(`/api/v1/places/${placeId}/confirmations`)
+      .set('Origin', 'http://localhost:3000')
+      .set('Idempotency-Key', confirmationKey)
+      .send(confirmationBody)
+      .expect(200);
+    expect(confirmedReplay.body.data).toMatchObject({
+      id: confirmed.body.data.id,
+      replayed: true,
+    });
+    await owner
+      .post(`/api/v1/places/${placeId}/confirmations`)
+      .set('Origin', 'http://localhost:3000')
+      .set('Idempotency-Key', `phase10-confirm-new-${createUlid()}`)
+      .send(confirmationBody)
+      .expect(409);
+    expect(
+      await apiScalarCount('SELECT COUNT(*) AS count FROM place_confirmations WHERE place_id = ?', [
+        placeId,
+      ]),
+    ).toBe(1);
+
+    await owner
+      .post('/api/v1/contributions')
+      .set('Origin', 'http://localhost:3000')
+      .set('Idempotency-Key', `phase10-activity-draft-${createUlid()}`)
+      .send({})
+      .expect(201);
+    const activity = await owner.get('/api/v1/activity?limit=20').expect(200);
+    expect(activity.headers['cache-control']).toContain('no-store');
+    expect(activity.body.data.items.map((item: { type: string }) => item.type)).toEqual(
+      expect.arrayContaining(['CONTRIBUTION', 'REPORT', 'CONFIRMATION']),
+    );
+    const reportActivity = await owner.get('/api/v1/activity?type=REPORT&limit=1').expect(200);
+    expect(reportActivity.body.data.items).toHaveLength(1);
+
+    const audit = await admin
+      .get(`/api/v1/admin/audit?resourceId=${reportId}&limit=20`)
+      .expect(200);
+    expect(audit.headers['cache-control']).toContain('no-store');
+    expect(audit.body.data.items.length).toBeGreaterThanOrEqual(2);
+    expect(audit.text).not.toContain('latitude');
+    expect(audit.text).not.toContain('evidenceUrl');
+  }, 90_000);
 
   it('returns 429 with Retry-After and Problem Details', async () => {
     const redisService = getApp().get(RedisService);

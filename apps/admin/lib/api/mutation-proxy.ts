@@ -4,6 +4,8 @@ import { parseAdminEnvironment } from '@pitstop/config';
 
 const moderationActions = ['approve', 'claim', 'merge', 'needs-revision', 'reject'] as const;
 const moderationActionSet = new Set<string>(moderationActions);
+const reportActions = ['apply', 'claim', 'reject'] as const;
+const reportActionSet = new Set<string>(reportActions);
 const ulid = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 const forwardedRequestHeaders = [
   'accept',
@@ -24,6 +26,7 @@ const forwardedResponseHeaders = [
 ] as const;
 
 export type ModerationMutationAction = (typeof moderationActions)[number];
+export type ReportMutationAction = (typeof reportActions)[number];
 
 export type AdminMutationTarget =
   | Readonly<{ kind: 'MAGIC_LINK_REQUEST' }>
@@ -32,6 +35,11 @@ export type AdminMutationTarget =
       action: ModerationMutationAction;
       contributionId: string;
       kind: 'MODERATION';
+    }>
+  | Readonly<{
+      action: ReportMutationAction;
+      kind: 'REPORT';
+      reportId: string;
     }>;
 
 interface TrustedMutationProxyConfiguration {
@@ -48,6 +56,18 @@ export function createModerationMutationTarget(
     action: action as ModerationMutationAction,
     contributionId,
     kind: 'MODERATION',
+  };
+}
+
+export function createReportMutationTarget(
+  reportId: string,
+  action: string,
+): AdminMutationTarget | null {
+  if (!ulid.test(reportId) || !reportActionSet.has(action)) return null;
+  return {
+    action: action as ReportMutationAction,
+    kind: 'REPORT',
+    reportId,
   };
 }
 
@@ -179,6 +199,8 @@ function targetPath(target: AdminMutationTarget): string {
       return '/auth/logout';
     case 'MODERATION':
       return `/admin/contributions/${encodeURIComponent(target.contributionId)}/${target.action}`;
+    case 'REPORT':
+      return `/admin/reports/${encodeURIComponent(target.reportId)}/${target.action}`;
   }
 }
 

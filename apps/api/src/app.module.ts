@@ -24,6 +24,8 @@ import { HealthService } from './modules/health/health.service';
 import { PublicCategoriesModule } from './modules/public-categories/public-categories.module';
 import { PublicPlacesModule } from './modules/public-places/public-places.module';
 import { RecommendationsModule } from './modules/recommendations/recommendations.module';
+import { ReportsModule } from './modules/reports/reports.module';
+import { REPORT_LOG_REDACTION_PATHS } from './modules/reports/reports-security';
 
 @Module({
   imports: [
@@ -38,6 +40,7 @@ import { RecommendationsModule } from './modules/recommendations/recommendations
     PublicCategoriesModule,
     PublicPlacesModule,
     RecommendationsModule,
+    ReportsModule,
     LoggerModule.forRootAsync({
       imports: [ConfigurationModule],
       inject: [API_ENVIRONMENT],
@@ -65,6 +68,7 @@ import { RecommendationsModule } from './modules/recommendations/recommendations
               ...AUTH_LOG_REDACTION_PATHS,
               ...CONTRIBUTION_LOG_REDACTION_PATHS,
               ...INTEGRATION_LOG_REDACTION_PATHS,
+              ...REPORT_LOG_REDACTION_PATHS,
             ],
             censor: '[REDACTED]',
           },

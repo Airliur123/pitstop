@@ -32,7 +32,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   const logoutMutation = useMutation({
     mutationFn: () => requestLogout(),
     onSuccess: (response) => {
-      queryClient.removeQueries({ queryKey: queryKeys.contributionsPrivate() });
+      queryClient.removeQueries({ queryKey: queryKeys.privateData() });
       queryClient.setQueryData(queryKeys.authSession(), response);
     },
   });

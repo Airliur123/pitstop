@@ -3,6 +3,8 @@ import { z } from 'zod';
 
 export const authReturnToValues = ['/', '/activity', '/contribute', '/admin'] as const;
 const contributionReturnToPattern = /^\/contributions\/[0-9A-HJKMNP-TV-Z]{26}(?:\/success)?$/;
+const placeReturnToPattern = /^\/places\/[a-z0-9]+(?:-[a-z0-9]+)*(?:\/report)?$/;
+const reportReturnToPattern = /^\/reports\/[0-9A-HJKMNP-TV-Z]{26}(?:\/success)?$/;
 
 export function normalizeEmail(value: string): string {
   return value.normalize('NFKC').trim().toLowerCase();
@@ -16,6 +18,8 @@ export const authEmailSchema = z.preprocess(
 export const authReturnToSchema = z.union([
   z.enum(authReturnToValues),
   z.string().regex(contributionReturnToPattern, 'Tujuan masuk tidak diizinkan.'),
+  z.string().regex(placeReturnToPattern, 'Tujuan masuk tidak diizinkan.'),
+  z.string().regex(reportReturnToPattern, 'Tujuan masuk tidak diizinkan.'),
 ]);
 
 export function safeAuthReturnTo(value: unknown, fallback = '/'): string {

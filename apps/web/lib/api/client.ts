@@ -5,7 +5,9 @@ import type {
   ContributionDetail,
   LogoutResult,
   MagicLinkRequestResult,
+  PlaceConfirmationDetail,
   PlaceDetailMeta,
+  PlaceReportDetail,
   PublicCategory,
   PublicCategoryCode,
   PublicPlaceDetail,
@@ -14,15 +16,22 @@ import type {
   PublicPlaceSort,
   RecommendationMeta,
   RecommendationResult,
+  UserActivity,
 } from '@pitstop/contracts';
-import type { MagicLinkRequestInput } from '@pitstop/validation';
+import type {
+  ConfirmationInput,
+  CreateReportInput,
+  MagicLinkRequestInput,
+} from '@pitstop/validation';
 import type { z } from 'zod';
 
 import { NORMAL_RADIUS_METERS } from '../location';
 import { type GuestBudgetPreset, isValidBudget } from '../preferences';
 import {
+  activityResponseSchema,
   authSessionResponseSchema,
   categoriesResponseSchema,
+  confirmationResponseSchema,
   contributionResponseSchema,
   logoutResponseSchema,
   magicLinkRequestResponseSchema,
@@ -30,6 +39,7 @@ import {
   placesResponseSchema,
   problemDetailsSchema,
   recommendationsResponseSchema,
+  reportResponseSchema,
 } from './schemas';
 
 const REQUEST_TIMEOUT_MS = 8_000;
@@ -326,5 +336,59 @@ export function submitContribution(
       method: 'POST',
       signal,
     },
+  );
+}
+
+export function createPlaceReport(
+  placeId: string,
+  input: CreateReportInput,
+  idempotencyKey: string,
+  signal?: AbortSignal,
+) {
+  return request<ApiSuccess<PlaceReportDetail>>(
+    `/places/${encodeURIComponent(placeId)}/reports`,
+    reportResponseSchema,
+    { body: input, idempotencyKey, method: 'POST', signal },
+  );
+}
+
+export function getPlaceReport(id: string, signal?: AbortSignal) {
+  return request<ApiSuccess<PlaceReportDetail>>(
+    `/reports/${encodeURIComponent(id)}`,
+    reportResponseSchema,
+    { signal },
+  );
+}
+
+export function confirmPlace(
+  placeId: string,
+  input: ConfirmationInput,
+  idempotencyKey: string,
+  signal?: AbortSignal,
+) {
+  return request<ApiSuccess<PlaceConfirmationDetail>>(
+    `/places/${encodeURIComponent(placeId)}/confirmations`,
+    confirmationResponseSchema,
+    { body: input, idempotencyKey, method: 'POST', signal },
+  );
+}
+
+export interface ActivityInput {
+  readonly cursor?: string;
+  readonly limit?: number;
+  readonly status?: string;
+  readonly type?: 'CONFIRMATION' | 'CONTRIBUTION' | 'REPORT';
+}
+
+export function getActivity(input: ActivityInput = {}, signal?: AbortSignal) {
+  return request<ApiSuccess<UserActivity>>(
+    `/activity${queryString({
+      cursor: input.cursor,
+      limit: input.limit ?? 20,
+      status: input.status,
+      type: input.type,
+    })}`,
+    activityResponseSchema,
+    { signal },
   );
 }

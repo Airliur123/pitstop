@@ -42,6 +42,10 @@ export const places = mysqlTable(
       onDelete: 'set null',
       onUpdate: 'cascade',
     }),
+    communityConfirmedAt: timestamp('community_confirmed_at', { fsp: 3 }),
+    communityConfirmationCount: int('community_confirmation_count', { unsigned: true })
+      .notNull()
+      .default(0),
     dataFreshnessAt: timestamp('data_freshness_at', { fsp: 3 }).notNull(),
     version: int('version', { unsigned: true }).notNull().default(1),
     createdAt: createdAtColumn(),
@@ -54,6 +58,7 @@ export const places = mysqlTable(
     index('idx_places_deleted_at').on(table.deletedAt),
     index('idx_places_data_freshness').on(table.dataFreshnessAt),
     index('idx_places_district_city').on(table.district, table.city),
+    check('chk_places_community_confirmation_count', sql`${table.communityConfirmationCount} >= 0`),
     check('chk_places_version_positive', sql`${table.version} > 0`),
   ],
 );

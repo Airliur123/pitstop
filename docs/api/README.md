@@ -37,6 +37,21 @@ Phase 9 adds a signed durable Google Form inbox and ADMIN-only operations:
 | GET    | `/admin/integrations/google-form/submissions/:id`        | Read bounded inbox detail   |
 | POST   | `/admin/integrations/google-form/submissions/:id/replay` | Audit and replay failed row |
 
+Phase 10 adds private Place governance:
+
+| Method | Route                       | Purpose                                      |
+| ------ | --------------------------- | -------------------------------------------- |
+| POST   | `/places/:id/reports`       | Create an owned, idempotent `PENDING` report |
+| GET    | `/reports/:id`              | Read the current user's report               |
+| POST   | `/places/:id/confirmations` | Confirm current Place information            |
+| GET    | `/activity`                 | Read owned contribution/report/confirmation  |
+| GET    | `/admin/reports`            | Filter the private report queue              |
+| GET    | `/admin/reports/:id`        | Compare report proposal with current Place   |
+| POST   | `/admin/reports/:id/claim`  | Claim a versioned review lease               |
+| POST   | `/admin/reports/:id/apply`  | Apply an allowlisted patch transactionally   |
+| POST   | `/admin/reports/:id/reject` | Reject with a safe resolution                |
+| GET    | `/admin/audit`              | Read append-only governance audit            |
+
 Health remains at `/health/live` and `/health/ready`. Swagger UI is `/api/docs` and JSON is
 `/api/openapi.json` when `API_SWAGGER_ENABLED=true`.
 
@@ -67,4 +82,5 @@ documented rather than silently treated as equivalent.
 See the endpoint, error, pagination, cache, rate-limit, OpenAPI, testing, and security documents in
 this directory, plus [the Phase 6 authentication guide](../authentication/README.md),
 [contribution API guide](./contributions.md), and
-[Google Form integration runbook](../integrations/google-form.md).
+[Google Form integration runbook](../integrations/google-form.md), and the
+[Phase 10 governance guide](../governance/phase-10.md).

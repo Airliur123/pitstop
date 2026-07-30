@@ -102,6 +102,7 @@ describe.sequential('MySQL 8.4 spatial database', () => {
         '--character-set-server=utf8mb4',
         '--collation-server=utf8mb4_0900_ai_ci',
         '--default-time-zone=+00:00',
+        '--log-bin-trust-function-creators=1',
       ])
       .withExposedPorts(3306)
       .withWaitStrategy(Wait.forLogMessage(/port: 3306.*MySQL Community Server/i))
@@ -147,7 +148,7 @@ describe.sequential('MySQL 8.4 spatial database', () => {
     const [rows] = await getPool().query<CountRow[]>(
       'SELECT COUNT(*) AS count FROM __drizzle_migrations',
     );
-    expect(Number(rows[0]?.count)).toBe(10);
+    expect(Number(rows[0]?.count)).toBe(11);
   });
 
   it('2a. migration 0009 deterministically deduplicates contribution geocoding only', async () => {
@@ -171,6 +172,57 @@ describe.sequential('MySQL 8.4 spatial database', () => {
     const [rows] = await getPool().query<RowDataPacket[]>('SHOW TABLES');
     const tables = rows.map((row) => String(Object.values(row)[0])).sort();
     expect(tables.filter((name) => name !== '__drizzle_migrations')).toEqual([...expectedTables]);
+  });
+
+  it('3a. installs Phase 10 queue indexes and append-only governance triggers', async () => {
+    const [indexRows] = await getPool().query<RowDataPacket[]>(
+      `SELECT DISTINCT INDEX_NAME AS value
+       FROM information_schema.statistics
+       WHERE table_schema = DATABASE()
+         AND table_name IN ('place_reports', 'place_confirmations', 'audit_logs')`,
+    );
+    const indexes = indexRows.map((row) => String(row.value));
+    expect(indexes).toEqual(
+      expect.arrayContaining([
+        'idx_audit_created',
+        'idx_place_confirmations_place_expiry',
+        'idx_place_reports_queue',
+        'idx_place_reports_reporter_created',
+      ]),
+    );
+
+    const auditId = createUlid();
+    await getPool().execute(
+      `INSERT INTO audit_logs (
+         id, actor_type, actor_role, action, target_type, target_id, request_id
+       ) VALUES (?, 'SYSTEM', 'SYSTEM', 'TEST_APPEND_ONLY', 'REPORT', ?, ?)`,
+      [auditId, createUlid(), `request-${createUlid()}`],
+    );
+    await expect(
+      getPool().execute('UPDATE audit_logs SET action = ? WHERE id = ?', ['MUTATED', auditId]),
+    ).rejects.toMatchObject({ code: 'ER_SIGNAL_EXCEPTION' });
+    await expect(
+      getPool().execute('DELETE FROM audit_logs WHERE id = ?', [auditId]),
+    ).rejects.toMatchObject({ code: 'ER_SIGNAL_EXCEPTION' });
+
+    const placeId = await seededPlaceId(getPool(), 'data-simulasi-warung-bu-ani');
+    const historyId = createUlid();
+    await getPool().execute(
+      `INSERT INTO place_change_history (
+         id, place_id, source_type, change_type, next_version, changed_fields, new_value
+       ) VALUES (?, ?, 'SYSTEM', 'TEST_APPEND_ONLY', ?, JSON_ARRAY('verificationStatus'),
+         JSON_OBJECT('verificationStatus', 'ADMIN_VERIFIED'))`,
+      [historyId, placeId, await placeVersion(getPool(), placeId)],
+    );
+    await expect(
+      getPool().execute('UPDATE place_change_history SET reason = ? WHERE id = ?', [
+        'mutated',
+        historyId,
+      ]),
+    ).rejects.toMatchObject({ code: 'ER_SIGNAL_EXCEPTION' });
+    await expect(
+      getPool().execute('DELETE FROM place_change_history WHERE id = ?', [historyId]),
+    ).rejects.toMatchObject({ code: 'ER_SIGNAL_EXCEPTION' });
   });
 
   it('4. enforces foreign keys', async () => {
@@ -458,16 +510,21 @@ describe.sequential('MySQL 8.4 spatial database', () => {
   it('8. enforces one active place confirmation per user and place', async () => {
     const userId = await insertUser(getPool(), uniqueEmail('confirmation'));
     const placeId = await seededPlaceId(getPool(), 'data-simulasi-warung-bu-ani');
+    const version = await placeVersion(getPool(), placeId);
     await getPool().execute(
-      `INSERT INTO place_confirmations (id, place_id, user_id, confirmation_type)
-       VALUES (?, ?, ?, 'STILL_VALID')`,
-      [createUlid(), placeId, userId],
+      `INSERT INTO place_confirmations (
+         id, place_id, user_id, confirmation_type, observed_at, expires_at, place_version
+       ) VALUES (?, ?, ?, 'STILL_VALID', CURRENT_TIMESTAMP(3),
+         DATE_ADD(CURRENT_TIMESTAMP(3), INTERVAL 90 DAY), ?)`,
+      [createUlid(), placeId, userId, version],
     );
     await expect(
       getPool().execute(
-        `INSERT INTO place_confirmations (id, place_id, user_id, confirmation_type)
-         VALUES (?, ?, ?, 'PRICE_ACCURATE')`,
-        [createUlid(), placeId, userId],
+        `INSERT INTO place_confirmations (
+           id, place_id, user_id, confirmation_type, observed_at, expires_at, place_version
+         ) VALUES (?, ?, ?, 'PRICE_ACCURATE', CURRENT_TIMESTAMP(3),
+           DATE_ADD(CURRENT_TIMESTAMP(3), INTERVAL 90 DAY), ?)`,
+        [createUlid(), placeId, userId, version],
       ),
     ).rejects.toMatchObject({ code: 'ER_DUP_ENTRY' });
   });
@@ -683,9 +740,10 @@ describe.sequential('MySQL 8.4 spatial database', () => {
     const reportId = createUlid();
     await getPool().execute(
       `INSERT INTO place_reports (
-         id, place_id, reported_by, report_type, description, report_status
-       ) VALUES (?, ?, ?, 'PRICE_CHANGED', 'Integration report', 'PENDING')`,
-      [reportId, placeId, reporterId],
+         id, place_id, reported_by, report_type, description, report_status,
+         submitted_place_version
+       ) VALUES (?, ?, ?, 'PRICE_CHANGED', 'Integration report', 'PENDING', ?)`,
+      [reportId, placeId, reporterId, versionBefore],
     );
     await expect(
       applyReportTransaction(getPool(), {
@@ -728,11 +786,13 @@ describe.sequential('MySQL 8.4 spatial database', () => {
     const reporterId = await insertUser(getPool(), uniqueEmail('optimistic'));
     const placeId = await seededPlaceId(getPool(), 'data-simulasi-warkop-bang-udin');
     const reportId = createUlid();
+    const versionBefore = await placeVersion(getPool(), placeId);
     await getPool().execute(
       `INSERT INTO place_reports (
-         id, place_id, reported_by, report_type, description, report_status
-       ) VALUES (?, ?, ?, 'HOURS_CHANGED', 'Optimistic conflict', 'PENDING')`,
-      [reportId, placeId, reporterId],
+         id, place_id, reported_by, report_type, description, report_status,
+         submitted_place_version
+       ) VALUES (?, ?, ?, 'HOURS_CHANGED', 'Optimistic conflict', 'PENDING', ?)`,
+      [reportId, placeId, reporterId, versionBefore],
     );
     await expect(
       applyReportTransaction(getPool(), {

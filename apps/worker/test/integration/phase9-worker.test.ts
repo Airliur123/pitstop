@@ -52,6 +52,7 @@ describe.sequential('Phase 9 worker integration', () => {
           '--character-set-server=utf8mb4',
           '--collation-server=utf8mb4_0900_ai_ci',
           '--default-time-zone=+00:00',
+          '--log-bin-trust-function-creators=1',
         ])
         .withExposedPorts(3306)
         .withWaitStrategy(Wait.forLogMessage(/port: 3306.*MySQL Community Server/i))

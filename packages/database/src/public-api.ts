@@ -108,6 +108,7 @@ export interface DatabasePublicMenu {
 
 export interface DatabasePublicPlaceDetail {
   readonly id: string;
+  readonly version: number;
   readonly slug: string;
   readonly name: string;
   readonly description: string | null;
@@ -184,6 +185,7 @@ interface PlaceRow extends RowDataPacket {
 
 interface DetailRow extends RowDataPacket {
   readonly id: string;
+  readonly version: number;
   readonly slug: string;
   readonly name: string;
   readonly description: string | null;
@@ -458,7 +460,8 @@ export async function findPublicPlaceBySlug(
 ): Promise<DatabasePublicPlaceDetail | null> {
   const [placeRows] = await executor.execute<DetailRow[]>(
     `SELECT
-       id, slug, name, description, address, landmark, district, city, province, postal_code,
+       id, version, slug, name, description, address, landmark, district, city, province,
+       postal_code,
        ST_Longitude(location) AS longitude, ST_Latitude(location) AS latitude,
        verified_at, data_freshness_at
      FROM places
@@ -520,6 +523,7 @@ export async function findPublicPlaceBySlug(
 
   return {
     id: place.id,
+    version: Number(place.version),
     slug: place.slug,
     name: place.name,
     description: place.description,

@@ -185,6 +185,9 @@ export async function approveContributionTransaction(
     });
     await insertHistoryAndAudit(connection, {
       actorUserId: input.actorUserId,
+      changedFields: ['name', 'placeStatus', 'verificationStatus'],
+      nextVersion: previousPlace ? previousPlace.version + 1 : 1,
+      previousVersion: previousPlace?.version ?? null,
       requestId: input.requestId,
       reason: input.reason,
       placeId,
@@ -239,6 +242,13 @@ export async function applyReportTransaction(pool: Pool, input: ApplyReportInput
 
     await insertHistoryAndAudit(connection, {
       actorUserId: input.reviewerId,
+      changedFields: [
+        ...(input.name === undefined ? [] : ['name']),
+        ...(input.placeStatus === undefined ? [] : ['placeStatus']),
+        ...(input.verificationStatus === undefined ? [] : ['verificationStatus']),
+      ],
+      nextVersion: previousPlace.version + 1,
+      previousVersion: previousPlace.version,
       requestId: input.requestId,
       reason: input.reason,
       placeId: report.place_id as Ulid,
@@ -379,6 +389,9 @@ async function assertMainItemRule(
 
 interface HistoryAuditInput {
   readonly actorUserId: Ulid;
+  readonly changedFields: readonly string[];
+  readonly nextVersion: number;
+  readonly previousVersion: number | null;
   readonly requestId: string;
   readonly reason: string;
   readonly placeId: Ulid;
@@ -396,8 +409,8 @@ async function insertHistoryAndAudit(
   await connection.execute(
     `INSERT INTO place_change_history (
        id, place_id, changed_by, source_type, source_id, change_type,
-       previous_value, new_value, reason
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       previous_version, next_version, changed_fields, previous_value, new_value, reason
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       createUlid(),
       input.placeId,
@@ -405,6 +418,9 @@ async function insertHistoryAndAudit(
       input.sourceType,
       input.sourceId,
       input.changeType,
+      input.previousVersion,
+      input.nextVersion,
+      JSON.stringify(input.changedFields),
       input.previousValue,
       input.newValue,
       input.reason,
@@ -412,9 +428,9 @@ async function insertHistoryAndAudit(
   );
   await connection.execute(
     `INSERT INTO audit_logs (
-       id, actor_user_id, actor_role, action, target_type, target_id, request_id,
-       previous_value, new_value, reason
-     ) VALUES (?, ?, 'ADMIN', ?, 'PLACE', ?, ?, ?, ?, ?)`,
+       id, actor_type, actor_user_id, actor_role, action, target_type, target_id, request_id,
+       previous_value, new_value, metadata, reason
+     ) VALUES (?, 'ADMIN', ?, 'ADMIN', ?, 'PLACE', ?, ?, ?, ?, ?, ?)`,
     [
       createUlid(),
       input.actorUserId,
@@ -423,6 +439,7 @@ async function insertHistoryAndAudit(
       input.requestId,
       input.previousValue,
       input.newValue,
+      JSON.stringify({ changedFields: input.changedFields }),
       input.reason,
     ],
   );

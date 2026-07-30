@@ -142,6 +142,7 @@ interface PlaceRow extends RowDataPacket {
   readonly id: string;
   readonly place_status: string;
   readonly slug: string;
+  readonly version: number;
 }
 
 interface MutationReplay {
@@ -569,6 +570,7 @@ export class AdminModerationRepository {
         actorAdminId: input.adminId,
         contributionId: input.contributionId,
         placeId,
+        previousVersion: existingPlace?.version ?? null,
         requestId: input.requestId,
         type: existingPlace ? 'CONTRIBUTION_MERGED_INTO_PLACE' : 'CONTRIBUTION_CREATED_PLACE',
       });
@@ -675,6 +677,7 @@ export class AdminModerationRepository {
       readonly actorAdminId: string;
       readonly contributionId: string;
       readonly placeId: string;
+      readonly previousVersion: number | null;
       readonly requestId: string;
       readonly type: string;
     },
@@ -683,17 +686,38 @@ export class AdminModerationRepository {
       placeStatus: 'ACTIVE',
       verificationStatus: 'ADMIN_VERIFIED',
     });
+    const nextVersion = (input.previousVersion ?? 0) + 1;
     await connection.execute(
       `INSERT INTO place_change_history (
-         id, place_id, changed_by, source_type, source_id, change_type, new_value
-       ) VALUES (?, ?, ?, 'CONTRIBUTION', ?, ?, ?)`,
-      [createUlid(), input.placeId, input.actorAdminId, input.contributionId, input.type, newValue],
+         id, place_id, changed_by, source_type, source_id, change_type,
+         previous_version, next_version, changed_fields, new_value
+       ) VALUES (?, ?, ?, 'CONTRIBUTION', ?, ?, ?, ?, ?, ?)`,
+      [
+        createUlid(),
+        input.placeId,
+        input.actorAdminId,
+        input.contributionId,
+        input.type,
+        input.previousVersion,
+        nextVersion,
+        JSON.stringify(['placeStatus', 'verificationStatus']),
+        newValue,
+      ],
     );
     await connection.execute(
       `INSERT INTO audit_logs (
-         id, actor_user_id, actor_role, action, target_type, target_id, request_id, new_value
-       ) VALUES (?, ?, 'ADMIN', ?, 'PLACE', ?, ?, ?)`,
-      [createUlid(), input.actorAdminId, input.type, input.placeId, input.requestId, newValue],
+         id, actor_type, actor_user_id, actor_role, action, target_type, target_id,
+         request_id, new_value, metadata
+       ) VALUES (?, 'ADMIN', ?, 'ADMIN', ?, 'PLACE', ?, ?, ?, ?)`,
+      [
+        createUlid(),
+        input.actorAdminId,
+        input.type,
+        input.placeId,
+        input.requestId,
+        newValue,
+        JSON.stringify({ changedFields: ['placeStatus', 'verificationStatus'] }),
+      ],
     );
   }
 
@@ -720,7 +744,7 @@ export class AdminModerationRepository {
     placeId: string,
   ): Promise<PlaceRow> {
     const [rows] = await connection.execute<PlaceRow[]>(
-      `SELECT id, slug, place_status, deleted_at
+      `SELECT id, slug, place_status, deleted_at, version
        FROM places WHERE id = ? FOR UPDATE`,
       [placeId],
     );
@@ -733,7 +757,7 @@ export class AdminModerationRepository {
 
   private async requiredPlace(connection: PoolConnection, placeId: string): Promise<PlaceRow> {
     const [rows] = await connection.execute<PlaceRow[]>(
-      'SELECT id, slug, place_status, deleted_at FROM places WHERE id = ? LIMIT 1',
+      'SELECT id, slug, place_status, deleted_at, version FROM places WHERE id = ? LIMIT 1',
       [placeId],
     );
     const place = rows[0];

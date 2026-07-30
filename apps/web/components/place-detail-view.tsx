@@ -10,6 +10,7 @@ import { formatRupiah, formatTime } from '../lib/format';
 import { queryKeys } from '../lib/query-keys';
 import { ApiErrorState } from './api-error-state';
 import { GuestShell } from './guest-shell';
+import { PlaceGovernanceActions } from './place-governance-actions';
 
 const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'] as const;
 
@@ -164,6 +165,8 @@ export function PlaceDetailView({ slug }: Readonly<{ slug: string }>) {
           </address>
           <p className="mt-2 text-[13px] text-muted">Terverifikasi admin · data publik aktif</p>
         </section>
+
+        <PlaceGovernanceActions place={place} />
       </main>
       <div className="fixed inset-x-0 bottom-0 z-[var(--pitstop-z-sticky)] mx-auto max-w-[430px] border-t border-border bg-surface px-4 py-3">
         <LinkButton

@@ -12,6 +12,16 @@ vi.mock('../lib/api/client', async (importOriginal) => {
   const original = await importOriginal<typeof import('../lib/api/client')>();
   return { ...original, getPlaceDetail: vi.fn() };
 });
+vi.mock('./auth-provider', () => ({
+  useAuth: () => ({
+    error: null,
+    isLoggingOut: false,
+    logout: vi.fn(),
+    refresh: vi.fn(),
+    session: { authenticated: false },
+    status: 'unauthenticated',
+  }),
+}));
 
 const requestId = 'detail-component-request' as RequestId;
 const place: PublicPlaceDetail = {
@@ -30,6 +40,7 @@ const place: PublicPlaceDetail = {
   district: 'Menteng',
   facilities: [],
   id: 'place-1',
+  version: 1,
   landmark: null,
   latitude: -6.123456,
   longitude: 106.812345,

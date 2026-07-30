@@ -4,6 +4,9 @@ import type {
   AdminDashboard,
   AdminGoogleFormIntegrationStatus,
   AdminGoogleFormSubmissionList,
+  AdminReportDetail,
+  AdminReportQueue,
+  AuditLogPage,
   AuthSession,
 } from '@pitstop/contracts';
 import { cookies } from 'next/headers';
@@ -14,6 +17,9 @@ import {
   adminContributionDetailResponseSchema,
   adminContributionQueueResponseSchema,
   adminDashboardResponseSchema,
+  adminReportDetailResponseSchema,
+  adminReportQueueResponseSchema,
+  auditLogPageResponseSchema,
   authSessionResponseSchema,
   googleFormIntegrationStatusResponseSchema,
   googleFormSubmissionListResponseSchema,
@@ -91,6 +97,26 @@ export async function getAdminContribution(id: string): Promise<AdminContributio
     `/admin/contributions/${encodeURIComponent(id)}`,
     adminContributionDetailResponseSchema,
   );
+  return response.data;
+}
+
+export async function getAdminReports(query: URLSearchParams): Promise<AdminReportQueue> {
+  const suffix = query.size > 0 ? `?${query.toString()}` : '';
+  const response = await serverRequest(`/admin/reports${suffix}`, adminReportQueueResponseSchema);
+  return response.data;
+}
+
+export async function getAdminReport(id: string): Promise<AdminReportDetail> {
+  const response = await serverRequest(
+    `/admin/reports/${encodeURIComponent(id)}`,
+    adminReportDetailResponseSchema,
+  );
+  return response.data;
+}
+
+export async function getAuditLog(query: URLSearchParams): Promise<AuditLogPage> {
+  const suffix = query.size > 0 ? `?${query.toString()}` : '';
+  const response = await serverRequest(`/admin/audit${suffix}`, auditLogPageResponseSchema);
   return response.data;
 }
 
