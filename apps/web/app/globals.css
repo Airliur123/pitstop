@@ -156,11 +156,15 @@ select {
 }
 
 .pitstop-map-summary a {
+  .pitstop-map-summary a {
   min-height: var(--pitstop-size-tap-min);
   display: inline-flex;
   align-items: center;
-  color: var(--pitstop-color-text-brand);
+  color: #3d7352;
   font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
 }
 
 .pitstop-map-summary a:focus-visible {
