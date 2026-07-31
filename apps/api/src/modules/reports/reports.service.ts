@@ -52,7 +52,7 @@ export class ReportsService {
   ): Promise<PlaceReportDetail> {
     const parsedPlaceId = parseId(placeId, 'PLACE_NOT_FOUND');
     await this.rateLimit.enforce(user.id, 'report', parsedPlaceId);
-    return this.runRepository(() =>
+    const report = await this.runRepository(() =>
       this.repository.createReport({
         idempotencyKey,
         placeId: parsedPlaceId,
@@ -67,6 +67,11 @@ export class ReportsService {
         userId: user.id,
       }),
     );
+    await this.invalidatePlaceDetail(report.place.slug, {
+      operation: 'report-created',
+      reportId: report.id,
+    });
+    return report;
   }
 
   async reportDetail(user: AuthUser, reportId: string): Promise<PlaceReportDetail> {
@@ -87,7 +92,7 @@ export class ReportsService {
   ): Promise<PlaceConfirmationDetail> {
     const parsedPlaceId = parseId(placeId, 'PLACE_NOT_FOUND');
     await this.rateLimit.enforce(user.id, 'confirmation', parsedPlaceId);
-    return this.runRepository(() =>
+    const confirmation = await this.runRepository(() =>
       this.repository.confirmPlace({
         confirmation: input,
         idempotencyKey,
@@ -102,6 +107,11 @@ export class ReportsService {
         userId: user.id,
       }),
     );
+    await this.invalidatePlaceDetail(confirmation.place.slug, {
+      confirmationId: confirmation.id,
+      operation: 'place-confirmed',
+    });
+    return confirmation;
   }
 
   async activity(user: AuthUser, input: ActivityQueryInput): Promise<UserActivity> {
@@ -229,19 +239,23 @@ export class ReportsService {
         requestId,
       }),
     );
-    const [detailInvalidated, searchInvalidated, recommendationInvalidated] = await Promise.all([
-      this.cache.invalidate('place-detail', { slug: result.placeSlug }),
+    const [, searchInvalidated, recommendationInvalidated] = await Promise.all([
+      this.invalidatePlaceDetail(result.placeSlug, {
+        operation: 'report-applied',
+        reportId: result.reportId,
+      }),
       this.cache.invalidateNamespace('place-search'),
       this.cache.invalidateNamespace('recommendations'),
     ]);
-    if (!detailInvalidated || !searchInvalidated || !recommendationInvalidated) {
+    if (!searchInvalidated || !recommendationInvalidated) {
       this.logger.warn({
         cacheInvalidation: 'failed-after-report-commit',
         reportId: result.reportId,
       });
     }
+    const report = await this.requiredAdminDetail(result.reportId);
     return {
-      report: await this.requiredAdminDetail(result.reportId),
+      report,
       replayed: result.replayed,
     };
   }
@@ -271,8 +285,13 @@ export class ReportsService {
         resolution: input.resolution,
       }),
     );
+    const report = await this.requiredAdminDetail(result.reportId);
+    await this.invalidatePlaceDetail(report.place.slug, {
+      operation: 'report-rejected',
+      reportId: result.reportId,
+    });
     return {
-      report: await this.requiredAdminDetail(result.reportId),
+      report,
       replayed: result.replayed,
     };
   }
@@ -312,6 +331,20 @@ export class ReportsService {
     const report = await this.repository.findAdminReport(reportId);
     if (!report) throw new Error('Report mutation result could not be reloaded');
     return report;
+  }
+
+  private async invalidatePlaceDetail(
+    slug: string,
+    context: Readonly<Record<string, string>>,
+  ): Promise<boolean> {
+    const invalidated = await this.cache.invalidate('place-detail', { slug });
+    if (!invalidated) {
+      this.logger.warn({
+        cacheInvalidation: 'failed-after-report-commit',
+        ...context,
+      });
+    }
+    return invalidated;
   }
 
   private async runRepository<T>(operation: () => Promise<T>): Promise<T> {

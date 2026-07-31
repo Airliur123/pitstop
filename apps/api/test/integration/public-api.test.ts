@@ -1384,25 +1384,146 @@ describe.sequential('public, authentication, contribution, and moderation API', 
     });
     expect(ownedApplied.text).not.toContain('"metadata"');
 
+    await pool.execute('DELETE FROM operating_hours WHERE place_id = ?', [placeId]);
+    await pool.execute(
+      `INSERT INTO operating_hours (
+         id, place_id, day_of_week, sequence, opens_at, closes_at, is_24_hours
+       ) VALUES
+         (?, ?, 1, 0, '08:00:00', '17:00:00', false),
+         (?, ?, 2, 0, '09:00:00', '18:00:00', false)`,
+      [createUlid(), placeId, createUlid(), placeId],
+    );
+    const hoursCreated = await owner
+      .post(`/api/v1/places/${placeId}/reports`)
+      .set('Origin', 'http://localhost:3000')
+      .set('Idempotency-Key', `phase10-report-hours-${createUlid()}`)
+      .send({
+        expectedPlaceVersion: publicAfterApply.body.data.version,
+        explanation: 'Hanya jadwal hari Senin yang berubah menjadi dua sesi terpisah.',
+        proposedChange: {
+          kind: 'HOURS_CHANGED',
+          operatingHours: [
+            {
+              closesAt: '11:00',
+              dayOfWeek: 1,
+              is24Hours: false,
+              isClosed: false,
+              opensAt: '07:00',
+            },
+            {
+              closesAt: '20:00',
+              dayOfWeek: 1,
+              is24Hours: false,
+              isClosed: false,
+              opensAt: '16:00',
+            },
+          ],
+        },
+        reportType: 'HOURS_CHANGED',
+      })
+      .expect(201);
+    const hoursReportId = String(hoursCreated.body.data.id);
+    const hoursClaim = await admin
+      .post(`/api/v1/admin/reports/${hoursReportId}/claim`)
+      .set('Origin', 'http://localhost:3001')
+      .set('Idempotency-Key', `phase10-claim-hours-${createUlid()}`)
+      .send({ expectedVersion: hoursCreated.body.data.version })
+      .expect(200);
+    const hoursApplyBody = {
+      approvedPatch: hoursCreated.body.data.proposal,
+      expectedPlaceVersion: hoursClaim.body.data.report.currentPlace.version,
+      expectedReportVersion: hoursClaim.body.data.report.version,
+      resolution: 'Koreksi parsial hari Senin dan dua interval telah diverifikasi.',
+    };
+    const [hoursBeforeRollback] = await pool.execute<RowDataPacket[]>(
+      `SELECT day_of_week, sequence, TIME_FORMAT(opens_at, '%H:%i') AS opens_at,
+         TIME_FORMAT(closes_at, '%H:%i') AS closes_at
+       FROM operating_hours WHERE place_id = ?
+       ORDER BY day_of_week, sequence`,
+      [placeId],
+    );
+    await pool.query('DROP TRIGGER IF EXISTS phase10_force_hours_history_failure');
+    await pool.query(
+      `CREATE TRIGGER phase10_force_hours_history_failure
+       BEFORE INSERT ON place_change_history
+       FOR EACH ROW
+       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'phase10 hours rollback test'`,
+    );
+    try {
+      await admin
+        .post(`/api/v1/admin/reports/${hoursReportId}/apply`)
+        .set('Origin', 'http://localhost:3001')
+        .set('Idempotency-Key', `phase10-hours-rollback-${createUlid()}`)
+        .send(hoursApplyBody)
+        .expect(500);
+    } finally {
+      await pool.query('DROP TRIGGER IF EXISTS phase10_force_hours_history_failure');
+    }
+    const [hoursAfterRollback] = await pool.execute<RowDataPacket[]>(
+      `SELECT day_of_week, sequence, TIME_FORMAT(opens_at, '%H:%i') AS opens_at,
+         TIME_FORMAT(closes_at, '%H:%i') AS closes_at
+       FROM operating_hours WHERE place_id = ?
+       ORDER BY day_of_week, sequence`,
+      [placeId],
+    );
+    expect(hoursAfterRollback).toEqual(hoursBeforeRollback);
+    expect(
+      (await admin.get(`/api/v1/admin/reports/${hoursReportId}`).expect(200)).body.data,
+    ).toMatchObject({
+      currentPlace: { version: hoursApplyBody.expectedPlaceVersion },
+      status: 'IN_REVIEW',
+      version: hoursApplyBody.expectedReportVersion,
+    });
+
+    await admin
+      .post(`/api/v1/admin/reports/${hoursReportId}/apply`)
+      .set('Origin', 'http://localhost:3001')
+      .set('Idempotency-Key', `phase10-hours-apply-${createUlid()}`)
+      .send(hoursApplyBody)
+      .expect(200);
+    const [hoursAfterApply] = await pool.execute<RowDataPacket[]>(
+      `SELECT day_of_week, sequence, TIME_FORMAT(opens_at, '%H:%i') AS opens_at,
+         TIME_FORMAT(closes_at, '%H:%i') AS closes_at
+       FROM operating_hours WHERE place_id = ?
+       ORDER BY day_of_week, sequence`,
+      [placeId],
+    );
+    expect(hoursAfterApply).toEqual([
+      { closes_at: '11:00', day_of_week: 1, opens_at: '07:00', sequence: 0 },
+      { closes_at: '20:00', day_of_week: 1, opens_at: '16:00', sequence: 1 },
+      { closes_at: '18:00', day_of_week: 2, opens_at: '09:00', sequence: 0 },
+    ]);
+    const publicAfterHours = await request(server)
+      .get('/api/v1/public/places/data-simulasi-warung-bu-ani')
+      .expect(200);
+    expect(publicAfterHours.body.data.version).toBe(hoursApplyBody.expectedPlaceVersion + 1);
+
     const rejectedCreated = await owner
       .post(`/api/v1/places/${placeId}/reports`)
       .set('Origin', 'http://localhost:3000')
       .set('Idempotency-Key', `phase10-report-reject-${createUlid()}`)
       .send({
-        expectedPlaceVersion: publicAfterApply.body.data.version,
-        explanation: 'Harga menu utama tampak berubah dan perlu diperiksa admin.',
-        proposedChange: { kind: 'PRICE_CHANGED', priceAmount: 15_000 },
-        reportType: 'PRICE_CHANGED',
+        expectedPlaceVersion: publicAfterHours.body.data.version,
+        explanation: 'Place tampak tutup sementara dan perlu diperiksa oleh admin.',
+        proposedChange: {
+          kind: 'TEMPORARILY_CLOSED',
+          placeStatus: 'TEMPORARILY_CLOSED',
+        },
+        reportType: 'TEMPORARILY_CLOSED',
       })
       .expect(201);
     const rejectedId = String(rejectedCreated.body.data.id);
+    const publicWhileSeriousPending = await request(server).get(
+      '/api/v1/public/places/data-simulasi-warung-bu-ani',
+    );
+    expect(publicWhileSeriousPending.status).toBe(404);
     const rejectedClaim = await admin
       .post(`/api/v1/admin/reports/${rejectedId}/claim`)
       .set('Origin', 'http://localhost:3001')
       .set('Idempotency-Key', `phase10-claim-reject-${createUlid()}`)
       .send({ expectedVersion: rejectedCreated.body.data.version })
       .expect(200);
-    const resolution = 'Bukti belum cukup untuk mengubah harga publik.';
+    const resolution = 'Bukti belum cukup untuk mengubah status operasional publik.';
     const rejected = await admin
       .post(`/api/v1/admin/reports/${rejectedId}/reject`)
       .set('Origin', 'http://localhost:3001')
@@ -1421,6 +1542,10 @@ describe.sequential('public, authentication, contribution, and moderation API', 
     const currentPlace = await request(server)
       .get('/api/v1/public/places/data-simulasi-warung-bu-ani')
       .expect(200);
+    expect(currentPlace.body.data).toMatchObject({
+      verificationStatus: 'ADMIN_VERIFIED',
+      version: publicAfterHours.body.data.version + 2,
+    });
     const confirmationBody = {
       confirmationType: 'STILL_VALID',
       confirmedAt: new Date().toISOString(),
@@ -1445,6 +1570,10 @@ describe.sequential('public, authentication, contribution, and moderation API', 
       id: confirmed.body.data.id,
       replayed: true,
     });
+    const publicAfterConfirmation = await request(server)
+      .get('/api/v1/public/places/data-simulasi-warung-bu-ani')
+      .expect(200);
+    expect(publicAfterConfirmation.body.data.version).toBe(currentPlace.body.data.version + 1);
     await owner
       .post(`/api/v1/places/${placeId}/confirmations`)
       .set('Origin', 'http://localhost:3000')
@@ -1470,6 +1599,14 @@ describe.sequential('public, authentication, contribution, and moderation API', 
     );
     const reportActivity = await owner.get('/api/v1/activity?type=REPORT&limit=1').expect(200);
     expect(reportActivity.body.data.items).toHaveLength(1);
+    const invalidActivityStatus = await owner
+      .get('/api/v1/activity?type=REPORT&status=APPROVED')
+      .expect(400);
+    expect(invalidActivityStatus.body).toMatchObject({
+      code: 'VALIDATION_ERROR',
+      status: 400,
+      type: expect.stringContaining('validation'),
+    });
 
     const audit = await admin
       .get(`/api/v1/admin/audit?resourceId=${reportId}&limit=20`)
@@ -1478,7 +1615,78 @@ describe.sequential('public, authentication, contribution, and moderation API', 
     expect(audit.body.data.items.length).toBeGreaterThanOrEqual(2);
     expect(audit.text).not.toContain('latitude');
     expect(audit.text).not.toContain('evidenceUrl');
-  }, 90_000);
+  }, 120_000);
+
+  it('counts only STILL_VALID confirmations toward whole-place community verification', async () => {
+    const redisService = getApp().get(RedisService);
+    await redisService.run((client) => client.flushdb());
+    if (!pool) throw new Error('Integration pool is not initialized');
+    const placeId = createUlid();
+    await pool.execute(
+      `INSERT INTO places (
+         id, name, slug, address, district, city, province, location,
+         place_status, verification_status, data_freshness_at, version
+       ) VALUES (?, 'Scoped confirmation fixture', ?, 'Fixture address', 'Fixture district',
+         'Fixture city', 'Fixture province', ST_SRID(POINT(106.8, -6.1), 4326),
+         'ACTIVE', 'UNVERIFIED', CURRENT_TIMESTAMP(3), 1)`,
+      [placeId, `scoped-confirmation-${placeId.toLowerCase()}`],
+    );
+    const agents: Awaited<ReturnType<typeof authenticatedAgent>>[] = [];
+    for (const scope of ['price', 'facilities', 'still-one', 'still-two', 'still-three']) {
+      agents.push(await authenticatedAgent(`phase10-${scope}-${createUlid().toLowerCase()}`));
+    }
+    const confirmationTypes = [
+      'PRICE_ACCURATE',
+      'FACILITIES_ACCURATE',
+      'STILL_VALID',
+      'STILL_VALID',
+      'STILL_VALID',
+    ] as const;
+    const expectedVersions = [1, 1, 1, 2, 3] as const;
+    const expectedStates = [
+      { count: 0, status: 'UNVERIFIED', version: 1 },
+      { count: 0, status: 'UNVERIFIED', version: 1 },
+      { count: 1, status: 'STALE', version: 2 },
+      { count: 2, status: 'STALE', version: 3 },
+      { count: 3, status: 'COMMUNITY_CONFIRMED', version: 4 },
+    ] as const;
+
+    for (const [index, agent] of agents.entries()) {
+      await agent
+        .post(`/api/v1/places/${placeId}/confirmations`)
+        .set('Origin', 'http://localhost:3000')
+        .set('Idempotency-Key', `phase10-scoped-confirmation-${index}-${createUlid()}`)
+        .send({
+          confirmationType: confirmationTypes[index],
+          confirmedAt: new Date().toISOString(),
+          expectedPlaceVersion: expectedVersions[index],
+        })
+        .expect(200);
+      const [states] = await pool.execute<
+        (RowDataPacket & {
+          readonly community_confirmation_count: number;
+          readonly verification_status: string;
+          readonly version: number;
+        })[]
+      >(
+        `SELECT version, verification_status, community_confirmation_count
+         FROM places WHERE id = ?`,
+        [placeId],
+      );
+      expect({
+        count: Number(states[0]?.community_confirmation_count),
+        status: states[0]?.verification_status,
+        version: Number(states[0]?.version),
+      }).toEqual(expectedStates[index]);
+    }
+    expect(
+      await apiScalarCount(
+        `SELECT COUNT(*) AS count FROM place_confirmations
+         WHERE place_id = ? AND confirmation_type IN ('PRICE_ACCURATE', 'FACILITIES_ACCURATE')`,
+        [placeId],
+      ),
+    ).toBe(2);
+  }, 60_000);
 
   it('returns 429 with Retry-After and Problem Details', async () => {
     const redisService = getApp().get(RedisService);

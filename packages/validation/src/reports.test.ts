@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  activityQuerySchema,
   approvedPlacePatchSchema,
   canTransitionReport,
   confirmationSchema,
@@ -97,6 +98,47 @@ describe('Phase 10 report validation', () => {
     ).toBe(false);
   });
 
+  it('accepts multiple intervals for a patched day and keeps closed/24-hour days exclusive', () => {
+    const hours = (operatingHours: unknown[]) =>
+      approvedPlacePatchSchema.safeParse({ kind: 'HOURS_CHANGED', operatingHours });
+    expect(
+      hours([
+        {
+          closesAt: '11:00',
+          dayOfWeek: 1,
+          is24Hours: false,
+          isClosed: false,
+          opensAt: '07:00',
+        },
+        {
+          closesAt: '20:00',
+          dayOfWeek: 1,
+          is24Hours: false,
+          isClosed: false,
+          opensAt: '16:00',
+        },
+      ]).success,
+    ).toBe(true);
+    expect(
+      hours([
+        {
+          closesAt: null,
+          dayOfWeek: 2,
+          is24Hours: false,
+          isClosed: true,
+          opensAt: null,
+        },
+        {
+          closesAt: '20:00',
+          dayOfWeek: 2,
+          is24Hours: false,
+          isClosed: false,
+          opensAt: '16:00',
+        },
+      ]).success,
+    ).toBe(false);
+  });
+
   it('validates idempotency keys and confirmation observation recency', () => {
     expect(reportIdempotencyKeySchema.safeParse('phase10-request-001').success).toBe(true);
     expect(reportIdempotencyKeySchema.safeParse('short').success).toBe(false);
@@ -115,5 +157,24 @@ describe('Phase 10 report validation', () => {
         expectedPlaceVersion: 1,
       }).success,
     ).toBe(false);
+  });
+
+  it('validates activity status within the selected activity type', () => {
+    expect(
+      activityQuerySchema.safeParse({ status: 'APPROVED', type: 'CONTRIBUTION' }).success,
+    ).toBe(true);
+    expect(activityQuerySchema.safeParse({ status: 'APPLIED', type: 'REPORT' }).success).toBe(true);
+    expect(activityQuerySchema.safeParse({ status: 'ACTIVE', type: 'CONFIRMATION' }).success).toBe(
+      true,
+    );
+    expect(activityQuerySchema.safeParse({ status: 'APPROVED', type: 'REPORT' }).success).toBe(
+      false,
+    );
+    expect(activityQuerySchema.safeParse({ status: 'APPLIED', type: 'CONFIRMATION' }).success).toBe(
+      false,
+    );
+    expect(activityQuerySchema.safeParse({ status: 'EXPIRED', type: 'CONTRIBUTION' }).success).toBe(
+      false,
+    );
   });
 });

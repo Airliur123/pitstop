@@ -13,14 +13,37 @@ ALTER TABLE `audit_logs` ADD `metadata` json;--> statement-breakpoint
 ALTER TABLE `place_change_history` ADD `previous_version` int unsigned;--> statement-breakpoint
 ALTER TABLE `place_change_history` ADD `next_version` int unsigned;--> statement-breakpoint
 ALTER TABLE `place_change_history` ADD `changed_fields` json;--> statement-breakpoint
+CREATE TABLE `_phase10_history_version_backfill` (
+  `id` char(26) NOT NULL,
+  `place_id` char(26) NOT NULL,
+  `ordinal` int unsigned NOT NULL,
+  `history_count` int unsigned NOT NULL,
+  CONSTRAINT `_phase10_history_version_backfill_id` PRIMARY KEY (`id`)
+);--> statement-breakpoint
+INSERT INTO `_phase10_history_version_backfill` (`id`, `place_id`, `ordinal`, `history_count`)
+SELECT history.`id`, history.`place_id`,
+  ROW_NUMBER() OVER (
+    PARTITION BY history.`place_id`
+    ORDER BY history.`created_at` ASC, history.`id` ASC
+  ),
+  COUNT(*) OVER (PARTITION BY history.`place_id`)
+FROM `place_change_history` history;--> statement-breakpoint
+UPDATE `places` place
+JOIN (
+  SELECT ranking.`place_id`, MAX(ranking.`history_count`) AS `history_count`
+  FROM `_phase10_history_version_backfill` ranking
+  GROUP BY ranking.`place_id`
+) counts ON counts.`place_id` = place.`id`
+SET place.`version` = GREATEST(place.`version`, counts.`history_count` + 1);--> statement-breakpoint
 UPDATE `place_change_history` history
-LEFT JOIN `places` place ON place.`id` = history.`place_id`
-SET history.`next_version` = COALESCE(place.`version`, 1),
-    history.`previous_version` = CASE
-      WHEN history.`change_type` LIKE '%CREATED%' OR COALESCE(place.`version`, 1) <= 1 THEN NULL
-      ELSE place.`version` - 1
-    END,
+JOIN `_phase10_history_version_backfill` ranking ON ranking.`id` = history.`id`
+JOIN `places` place ON place.`id` = history.`place_id`
+SET history.`previous_version` =
+      place.`version` - ranking.`history_count` + ranking.`ordinal` - 1,
+    history.`next_version` =
+      place.`version` - ranking.`history_count` + ranking.`ordinal`,
     history.`changed_fields` = COALESCE(JSON_KEYS(history.`new_value`), JSON_ARRAY());--> statement-breakpoint
+DROP TABLE `_phase10_history_version_backfill`;--> statement-breakpoint
 ALTER TABLE `place_change_history` MODIFY COLUMN `next_version` int unsigned NOT NULL;--> statement-breakpoint
 ALTER TABLE `place_change_history` MODIFY COLUMN `changed_fields` json NOT NULL;--> statement-breakpoint
 ALTER TABLE `places` ADD `community_confirmed_at` timestamp(3);--> statement-breakpoint

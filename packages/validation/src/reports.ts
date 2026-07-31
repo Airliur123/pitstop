@@ -76,18 +76,24 @@ const operatingHourSchema = z
 const operatingHoursSchema = z
   .array(operatingHourSchema)
   .min(1)
-  .max(7)
+  .max(21)
   .superRefine((hours, context) => {
-    const days = new Set<number>();
+    const hoursByDay = new Map<number, Array<(typeof hours)[number]>>();
     for (const [index, hour] of hours.entries()) {
-      if (days.has(hour.dayOfWeek)) {
+      const dayHours = hoursByDay.get(hour.dayOfWeek) ?? [];
+      dayHours.push(hour);
+      hoursByDay.set(hour.dayOfWeek, dayHours);
+
+      if (
+        dayHours.length > 1 &&
+        dayHours.some((candidate) => candidate.isClosed || candidate.is24Hours)
+      ) {
         context.addIssue({
           code: 'custom',
           path: [index, 'dayOfWeek'],
-          message: 'Hari yang sama tidak boleh diulang.',
+          message: 'Hari tutup atau 24 jam tidak boleh digabung dengan interval lain.',
         });
       }
-      days.add(hour.dayOfWeek);
     }
   });
 
@@ -286,7 +292,23 @@ export const activityQuerySchema = z
       .optional(),
     type: z.enum(['CONTRIBUTION', 'REPORT', 'CONFIRMATION']).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (value.status === undefined || value.type === undefined) return;
+
+    const allowedStatuses: Record<NonNullable<typeof value.type>, readonly string[]> = {
+      CONFIRMATION: ['ACTIVE', 'EXPIRED'],
+      CONTRIBUTION: contributionStatusValues,
+      REPORT: reportStatusValues,
+    };
+    if (!allowedStatuses[value.type].includes(value.status)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['status'],
+        message: `Status ${value.status} tidak valid untuk activity ${value.type}.`,
+      });
+    }
+  });
 
 export const adminReportQueueSchema = z
   .object({

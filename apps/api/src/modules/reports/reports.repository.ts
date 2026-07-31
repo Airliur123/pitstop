@@ -1149,22 +1149,32 @@ export class ReportsRepository {
         return ['menus'];
       }
       case 'HOURS_CHANGED': {
-        await connection.execute('DELETE FROM operating_hours WHERE place_id = ?', [place.id]);
+        const patchedDays = [...new Set(patch.operatingHours.map((hours) => hours.dayOfWeek))];
+        const dayPlaceholders = patchedDays.map(() => '?').join(', ');
+        await connection.execute(
+          `DELETE FROM operating_hours
+           WHERE place_id = ? AND day_of_week IN (${dayPlaceholders})`,
+          [place.id, ...patchedDays],
+        );
+        const nextSequenceByDay = new Map<number, number>();
         for (const hours of patch.operatingHours) {
           if (hours.isClosed) continue;
+          const sequence = nextSequenceByDay.get(hours.dayOfWeek) ?? 0;
           await connection.execute(
             `INSERT INTO operating_hours (
                id, place_id, day_of_week, sequence, opens_at, closes_at, is_24_hours
-             ) VALUES (?, ?, ?, 0, ?, ?, ?)`,
+             ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
             [
               createUlid(),
               place.id,
               hours.dayOfWeek,
+              sequence,
               hours.opensAt ? `${hours.opensAt}:00` : null,
               hours.closesAt ? `${hours.closesAt}:00` : null,
               hours.is24Hours,
             ],
           );
+          nextSequenceByDay.set(hours.dayOfWeek, sequence + 1);
         }
         return ['operatingHours'];
       }
@@ -1302,7 +1312,8 @@ export class ReportsRepository {
       `SELECT COUNT(DISTINCT pc.user_id) AS active_count,
          MAX(pc.observed_at) AS latest_observed_at
        FROM place_confirmations pc
-       WHERE pc.place_id = ? AND pc.expires_at > CURRENT_TIMESTAMP(3)
+       WHERE pc.place_id = ? AND pc.confirmation_type = 'STILL_VALID'
+         AND pc.expires_at > CURRENT_TIMESTAMP(3)
          AND pc.observed_at >= (
            SELECT p.data_freshness_at FROM places p WHERE p.id = pc.place_id
          )

@@ -34,16 +34,19 @@ administrative reads/writes use Redis limits scoped to a minimized user key, Pla
 
 ## Community confirmation policy
 
-`POST /api/v1/places/:id/confirmations` records `STILL_VALID` for a client-observed date and an
-optional short note. It never accepts coordinates and raw GPS is not persisted. There is one row per
-user and Place. An exact idempotent retry replays; a different request within the seven-day refresh
-window conflicts instead of inflating the count.
+`POST /api/v1/places/:id/confirmations` records `STILL_VALID`, `PRICE_ACCURATE`, or
+`FACILITIES_ACCURATE` for a client-observed date and an optional short note. It never accepts
+coordinates and raw GPS is not persisted. There is one row per user and Place. An exact idempotent
+retry replays; a different request within the seven-day refresh window conflicts instead of
+inflating the count.
 
-Only unexpired rows from distinct users count. A confirmation expires 90 days after `observedAt`;
-observations older than the Place's latest factual mutation are also excluded. The contributor
-whose contribution created the Place is excluded from the community threshold, so
-self-confirmation cannot repeatedly promote the Place. The threshold is three eligible unique
-users. Confirmation does not override a current admin verification.
+Only unexpired `STILL_VALID` rows from distinct users count toward whole-Place
+`COMMUNITY_CONFIRMED`. `PRICE_ACCURATE` and `FACILITIES_ACCURATE` remain scoped evidence and never
+increase that threshold. A confirmation expires 90 days after `observedAt`; observations older than
+the Place's latest factual mutation are also excluded. The contributor whose contribution created
+the Place is excluded from the community threshold, so self-confirmation cannot repeatedly promote
+the Place. The threshold is three eligible unique users. Confirmation does not override a current
+admin verification.
 
 ## Verification state
 

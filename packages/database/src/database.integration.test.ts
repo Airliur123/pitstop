@@ -79,6 +79,8 @@ const expectedTables = [
 describe.sequential('MySQL 8.4 spatial database', () => {
   let container: StartedTestContainer | undefined;
   let legacyContributionId: string;
+  let legacyHistoryIds: readonly string[];
+  let legacyHistoryPlaceId: string;
   let legacyPlaceGeocodingId: string;
   let legacyPreferredGeocodingId: string;
   let migrationFixtureRoot: string | undefined;
@@ -118,13 +120,18 @@ describe.sequential('MySQL 8.4 spatial database', () => {
       user: 'pitstop_test',
     });
     const migrationsFolder = fileURLToPath(new URL('../migrations', import.meta.url));
-    const stagedMigrations = await stageMigrationsThrough0008(migrationsFolder);
+    const stagedMigrations = await stageMigrationsThrough(migrationsFolder, 8);
     migrationFixtureRoot = stagedMigrations.root;
     await migrate(drizzle({ client: pool }), { migrationsFolder: stagedMigrations.folder });
     const legacyFixture = await insertLegacyGeocodingMigrationFixture(pool);
     legacyContributionId = legacyFixture.contributionId;
     legacyPlaceGeocodingId = legacyFixture.placeGeocodingId;
     legacyPreferredGeocodingId = legacyFixture.preferredGeocodingId;
+    await setStagedMigrationLimit(stagedMigrations.folder, migrationsFolder, 9);
+    await migrate(drizzle({ client: pool }), { migrationsFolder: stagedMigrations.folder });
+    const historyFixture = await insertLegacyHistoryMigrationFixture(pool);
+    legacyHistoryIds = historyFixture.historyIds;
+    legacyHistoryPlaceId = historyFixture.placeId;
     await migrate(drizzle({ client: pool }), { migrationsFolder });
     await seedDatabase(pool);
   });
@@ -166,6 +173,31 @@ describe.sequential('MySQL 8.4 spatial database', () => {
         [legacyPlaceGeocodingId],
       ),
     ).toBe(1);
+  });
+
+  it('2b. migration 0010 backfills chronological monotonic history versions', async () => {
+    const [historyRows] = await getPool().execute<
+      (RowDataPacket & {
+        readonly id: string;
+        readonly next_version: number;
+        readonly previous_version: number;
+      })[]
+    >(
+      `SELECT id, previous_version, next_version
+       FROM place_change_history
+       WHERE place_id = ?
+       ORDER BY created_at ASC, id ASC`,
+      [legacyHistoryPlaceId],
+    );
+    expect(historyRows.map((row) => row.id)).toEqual(legacyHistoryIds);
+    expect(
+      historyRows.map((row) => [Number(row.previous_version), Number(row.next_version)]),
+    ).toEqual([
+      [4, 5],
+      [5, 6],
+      [6, 7],
+    ]);
+    expect(await placeVersion(getPool(), legacyHistoryPlaceId as Ulid)).toBe(7);
   });
 
   it('3. creates every required domain table', async () => {
@@ -1189,14 +1221,26 @@ describe.sequential('MySQL 8.4 spatial database', () => {
   });
 });
 
-async function stageMigrationsThrough0008(
+async function stageMigrationsThrough(
   sourceFolder: string,
+  maximumIndex: number,
 ): Promise<{ readonly folder: string; readonly root: string }> {
   const root = await mkdtemp(join(tmpdir(), 'pitstop-migrations-'));
   const folder = join(root, 'migrations');
   await cp(sourceFolder, folder, { recursive: true });
-  const journalPath = join(folder, 'meta', '_journal.json');
-  const journal = JSON.parse(await readFile(journalPath, 'utf8')) as {
+  await setStagedMigrationLimit(folder, sourceFolder, maximumIndex);
+  return { folder, root };
+}
+
+async function setStagedMigrationLimit(
+  stagedFolder: string,
+  sourceFolder: string,
+  maximumIndex: number,
+): Promise<void> {
+  const journalPath = join(stagedFolder, 'meta', '_journal.json');
+  const sourceJournal = JSON.parse(
+    await readFile(join(sourceFolder, 'meta', '_journal.json'), 'utf8'),
+  ) as {
     readonly dialect: string;
     readonly entries: readonly { readonly idx: number }[];
     readonly version: string;
@@ -1205,15 +1249,46 @@ async function stageMigrationsThrough0008(
     journalPath,
     `${JSON.stringify(
       {
-        ...journal,
-        entries: journal.entries.filter((entry) => entry.idx <= 8),
+        ...sourceJournal,
+        entries: sourceJournal.entries.filter((entry) => entry.idx <= maximumIndex),
       },
       null,
       2,
     )}\n`,
     'utf8',
   );
-  return { folder, root };
+}
+
+async function insertLegacyHistoryMigrationFixture(pool: Pool): Promise<{
+  readonly historyIds: readonly string[];
+  readonly placeId: string;
+}> {
+  const placeId = createUlid();
+  await pool.execute(
+    `INSERT INTO places (
+       id, name, slug, address, district, city, province, location,
+       place_status, verification_status, data_freshness_at, version
+     ) VALUES (?, 'Legacy history fixture', ?, 'Fixture address', 'Fixture district',
+       'Fixture city', 'Fixture province', ST_SRID(POINT(106.8, -6.1), 4326),
+       'DRAFT', 'UNVERIFIED', CURRENT_TIMESTAMP(3), 7)`,
+    [placeId, `legacy-history-${placeId.toLowerCase()}`],
+  );
+  const firstId = createUlid();
+  const tiedIds = [createUlid(), createUlid()].sort();
+  const history = [
+    { createdAt: '2026-07-29 00:00:00.000', id: firstId, name: 'Legacy one' },
+    { createdAt: '2026-07-29 00:00:01.000', id: tiedIds[0] as string, name: 'Legacy two' },
+    { createdAt: '2026-07-29 00:00:01.000', id: tiedIds[1] as string, name: 'Legacy three' },
+  ] as const;
+  for (const entry of history) {
+    await pool.execute(
+      `INSERT INTO place_change_history (
+         id, place_id, source_type, change_type, new_value, created_at
+       ) VALUES (?, ?, 'SYSTEM', 'LEGACY_FIXTURE', JSON_OBJECT('name', ?), ?)`,
+      [entry.id, placeId, entry.name, entry.createdAt],
+    );
+  }
+  return { historyIds: history.map((entry) => entry.id), placeId };
 }
 
 async function insertLegacyGeocodingMigrationFixture(pool: Pool): Promise<{
