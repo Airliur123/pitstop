@@ -95,6 +95,7 @@ export interface PublicPlaceListItem {
 
 export interface PublicPlaceDetail {
   readonly id: string;
+  readonly version: number;
   readonly slug: string;
   readonly name: string;
   readonly description: string | null;

@@ -40,6 +40,7 @@ export function mapPublicPlace(
 export function mapPublicPlaceDetail(place: DatabasePublicPlaceDetail): PublicPlaceDetail {
   return {
     id: place.id,
+    version: place.version,
     slug: place.slug,
     name: place.name,
     description: place.description,

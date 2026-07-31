@@ -9,7 +9,11 @@ import {
   googleFormSubmissionStatusValues,
   integrationStageStatusValues,
   moderationActionValues,
+  reportStatusValues,
+  reportTypeValues,
+  verificationStatusValues,
 } from '@pitstop/contracts';
+import { approvedPlacePatchSchema } from '@pitstop/validation';
 import { z } from 'zod';
 
 const metaSchema = z
@@ -315,6 +319,168 @@ export const googleFormSubmissionListResponseSchema = successSchema(
           pageSize: z.number().int().positive(),
           totalItems: z.number().int().nonnegative(),
           totalPages: z.number().int().positive(),
+        })
+        .strict(),
+    })
+    .strict(),
+);
+
+const reportPlaceSummarySchema = z
+  .object({
+    address: z.string(),
+    id: z.string(),
+    name: z.string(),
+    slug: z.string(),
+    verificationStatus: z.enum(verificationStatusValues),
+    version: z.number().int().positive(),
+  })
+  .strict();
+
+const reportReviewerSchema = z
+  .object({
+    claimExpired: z.boolean(),
+    claimExpiresAt: z.string(),
+    claimedAt: z.string(),
+    email: z.string(),
+    id: z.string(),
+  })
+  .strict();
+
+const auditEntrySchema = z
+  .object({
+    action: z.string(),
+    actorId: z.string().nullable(),
+    actorType: z.enum(['USER', 'ADMIN', 'SYSTEM', 'INTEGRATION']),
+    createdAt: z.string(),
+    id: z.string(),
+    metadata: z.record(z.string(), z.unknown()),
+    nextStatus: z.string().nullable(),
+    previousStatus: z.string().nullable(),
+    requestId: z.string(),
+    resourceId: z.string(),
+    resourceType: z.string(),
+  })
+  .strict();
+
+const placeHistorySchema = z
+  .object({
+    actorId: z.string().nullable(),
+    after: z.record(z.string(), z.unknown()),
+    before: z.record(z.string(), z.unknown()).nullable(),
+    changedFields: z.array(z.string()),
+    createdAt: z.string(),
+    id: z.string(),
+    nextVersion: z.number().int().positive(),
+    previousVersion: z.number().int().positive().nullable(),
+    reason: z.string().nullable(),
+    sourceId: z.string().nullable(),
+    sourceType: z.string(),
+  })
+  .strict();
+
+const reportDetailSchema = z
+  .object({
+    appliedChangeSummary: z.record(z.string(), z.unknown()).nullable(),
+    audit: z.array(auditEntrySchema),
+    currentPlace: reportPlaceSummarySchema.extend({
+      categories: z.array(z.enum(contributionCategoryValues)),
+      description: z.string().nullable(),
+      facilities: z.array(facilitySchema),
+      latitude: z.number(),
+      longitude: z.number(),
+      menus: z.array(
+        z
+          .object({
+            id: z.string(),
+            isAvailable: z.boolean(),
+            name: z.string(),
+            priceAmount: z.number().int().nonnegative(),
+          })
+          .strict(),
+      ),
+      operatingHours: z.array(operatingHourSchema),
+    }),
+    currentReviewer: reportReviewerSchema.nullable(),
+    evidenceReference: z.string().nullable(),
+    evidenceUrl: z.string().nullable(),
+    explanation: z.string(),
+    history: z.array(auditEntrySchema),
+    id: z.string(),
+    place: reportPlaceSummarySchema,
+    placeHistory: z.array(placeHistorySchema),
+    proposal: approvedPlacePatchSchema,
+    relatedPendingReports: z.array(
+      z
+        .object({
+          id: z.string(),
+          reportType: z.enum(reportTypeValues),
+          submittedAt: z.string(),
+        })
+        .strict(),
+    ),
+    reporter: z.object({ id: z.string(), maskedEmail: z.string() }).strict(),
+    reportType: z.enum(reportTypeValues),
+    resolution: z.string().nullable(),
+    reviewedAt: z.string().nullable(),
+    status: z.enum(reportStatusValues),
+    submittedAt: z.string(),
+    version: z.number().int().positive(),
+  })
+  .strict();
+
+export const adminReportQueueResponseSchema = successSchema(
+  z
+    .object({
+      items: z.array(
+        z
+          .object({
+            category: z.enum(contributionCategoryValues),
+            currentReviewer: reportReviewerSchema.nullable(),
+            id: z.string(),
+            place: z
+              .object({
+                id: z.string(),
+                name: z.string(),
+                version: z.number().int().positive(),
+              })
+              .strict(),
+            reporter: z.object({ id: z.string(), maskedEmail: z.string() }).strict(),
+            reportType: z.enum(reportTypeValues),
+            status: z.enum(reportStatusValues),
+            submittedAt: z.string(),
+            version: z.number().int().positive(),
+          })
+          .strict(),
+      ),
+      pagination: z
+        .object({
+          hasMore: z.boolean(),
+          nextCursor: z.string().nullable(),
+        })
+        .strict(),
+    })
+    .strict(),
+);
+
+export const adminReportDetailResponseSchema = successSchema(reportDetailSchema);
+
+export const reportMutationResponseSchema = successSchema(
+  z
+    .object({
+      replayed: z.boolean(),
+      report: reportDetailSchema,
+    })
+    .strict(),
+);
+
+export const auditLogPageResponseSchema = successSchema(
+  z
+    .object({
+      items: z.array(auditEntrySchema),
+      pagination: z
+        .object({
+          hasMore: z.boolean(),
+          nextCursor: z.string().nullable(),
         })
         .strict(),
     })

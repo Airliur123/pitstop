@@ -36,6 +36,33 @@ export class PublicCacheService {
     return true;
   }
 
+  async invalidateNamespace(namespace: string): Promise<boolean> {
+    if (!this.environment.REDIS_CACHE_ENABLED) return true;
+    const pattern = `pitstop:public:v1:${namespace}:*`;
+    const result = await this.redis.run((client) =>
+      client.eval(
+        `local cursor = '0'
+         local deleted = 0
+         repeat
+           local batch = redis.call('SCAN', cursor, 'MATCH', ARGV[1], 'COUNT', 100)
+           cursor = batch[1]
+           for _, key in ipairs(batch[2]) do
+             deleted = deleted + redis.call('DEL', key)
+           end
+         until cursor == '0'
+         return deleted`,
+        0,
+        pattern,
+      ),
+    );
+    if (result === null) {
+      this.logger.warn({ cache: 'namespace-invalidation-failed', namespace });
+      return false;
+    }
+    this.logger.debug({ cache: 'namespace-invalidated', namespace });
+    return true;
+  }
+
   async remember<T>(
     namespace: string,
     keyInput: unknown,

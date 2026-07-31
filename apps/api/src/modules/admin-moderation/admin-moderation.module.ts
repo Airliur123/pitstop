@@ -10,5 +10,6 @@ import { AdminModerationRateLimitService } from './admin-moderation-rate-limit.s
   imports: [AuthModule],
   controllers: [AdminModerationController],
   providers: [AdminModerationRepository, AdminModerationRateLimitService, AdminModerationService],
+  exports: [AdminModerationRateLimitService],
 })
 export class AdminModerationModule {}

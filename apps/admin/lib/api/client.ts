@@ -1,4 +1,8 @@
-import type { MergeContributionResult, ModerationMutationResult } from '@pitstop/contracts';
+import type {
+  MergeContributionResult,
+  ModerationMutationResult,
+  ReportMutationResult,
+} from '@pitstop/contracts';
 import type { z } from 'zod';
 
 import {
@@ -7,6 +11,7 @@ import {
   mergeMutationResponseSchema,
   moderationMutationResponseSchema,
   problemDetailsSchema,
+  reportMutationResponseSchema,
 } from './schemas';
 
 export class AdminApiProblem extends Error {
@@ -124,5 +129,25 @@ export async function mutateContribution(
     action === 'merge'
       ? await readResponse(response, mergeMutationResponseSchema)
       : await readResponse(response, moderationMutationResponseSchema);
+  return result.data;
+}
+
+export async function mutateReport(
+  reportId: string,
+  action: 'apply' | 'claim' | 'reject',
+  body: unknown,
+  idempotencyKey: string,
+): Promise<ReportMutationResult> {
+  const response = await fetch(`/api/admin/reports/${encodeURIComponent(reportId)}/${action}`, {
+    body: JSON.stringify(body),
+    credentials: 'same-origin',
+    headers: {
+      Accept: 'application/json, application/problem+json',
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey,
+    },
+    method: 'POST',
+  });
+  const result = await readResponse(response, reportMutationResponseSchema);
   return result.data;
 }

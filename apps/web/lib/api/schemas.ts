@@ -1,14 +1,18 @@
 import {
+  type ActivityItem,
   type ApiSuccess,
   authRoleValues,
   type AuthSession,
   type CategoriesMeta,
+  confirmationTypeValues,
   type ContributionDetail,
   type LogoutResult,
   type MagicLinkRequestResult,
   type MagicLinkVerificationResult,
   openStatuses,
+  type PlaceConfirmationDetail,
   type PlaceDetailMeta,
+  type PlaceReportDetail,
   type PublicCategory,
   publicCategoryCodes,
   type PublicPlaceDetail,
@@ -20,9 +24,17 @@ import {
   recommendationFallbackReasons,
   type RecommendationMeta,
   type RecommendationResult,
+  reportStatusValues,
+  reportTypeValues,
   type RequestId,
+  type UserActivity,
+  verificationStatusValues,
 } from '@pitstop/contracts';
-import { contributionDraftSchema, contributionStatusSchema } from '@pitstop/validation';
+import {
+  approvedPlacePatchSchema,
+  contributionDraftSchema,
+  contributionStatusSchema,
+} from '@pitstop/validation';
 import { z } from 'zod';
 
 const requestId = z
@@ -257,6 +269,7 @@ const placeDetail = z.object({
   district: z.string().min(1),
   facilities: z.array(facility),
   id: z.string().min(1),
+  version: z.number().int().positive(),
   landmark: z.string().nullable(),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
@@ -314,3 +327,96 @@ export const contributionResponseSchema = successEnvelope(
   contributionDetail,
   responseMeta,
 ) satisfies z.ZodType<ApiSuccess<ContributionDetail>>;
+
+const reportPlaceSummary = z.object({
+  address: z.string(),
+  id: z.string().min(1),
+  name: z.string().min(1),
+  slug: z.string().min(1),
+  verificationStatus: z.enum(verificationStatusValues),
+  version: z.number().int().positive(),
+});
+
+const placeReportDetail = z.object({
+  appliedChangeSummary: z.record(z.string(), z.unknown()).nullable(),
+  evidenceReference: z.string().nullable(),
+  evidenceUrl: z.string().nullable(),
+  explanation: z.string(),
+  id: z.string().min(1),
+  place: reportPlaceSummary,
+  proposal: approvedPlacePatchSchema,
+  reportType: z.enum(reportTypeValues),
+  resolution: z.string().nullable(),
+  reviewedAt: dateTime.nullable(),
+  status: z.enum(reportStatusValues),
+  submittedAt: dateTime,
+  version: z.number().int().positive(),
+}) satisfies z.ZodType<PlaceReportDetail>;
+
+const placeConfirmationDetail = z.object({
+  confirmedAt: dateTime,
+  confirmationType: z.enum(confirmationTypeValues),
+  expiresAt: dateTime,
+  id: z.string().min(1),
+  note: z.string().nullable(),
+  place: reportPlaceSummary,
+  replayed: z.boolean(),
+  verificationStatus: z.enum(verificationStatusValues),
+}) satisfies z.ZodType<PlaceConfirmationDetail>;
+
+const contributionActivity = z.object({
+  createdAt: dateTime,
+  id: z.string().min(1),
+  placeId: z.string().nullable(),
+  placeName: z.string(),
+  status: contributionStatusSchema,
+  type: z.literal('CONTRIBUTION'),
+  updatedAt: dateTime,
+});
+const reportActivity = z.object({
+  createdAt: dateTime,
+  id: z.string().min(1),
+  placeId: z.string().min(1),
+  placeName: z.string(),
+  reportType: z.enum(reportTypeValues),
+  status: z.enum(reportStatusValues),
+  type: z.literal('REPORT'),
+  updatedAt: dateTime,
+});
+const confirmationActivity = z.object({
+  confirmationType: z.enum(confirmationTypeValues),
+  createdAt: dateTime,
+  id: z.string().min(1),
+  placeId: z.string().min(1),
+  placeName: z.string(),
+  status: z.enum(['ACTIVE', 'EXPIRED']),
+  type: z.literal('CONFIRMATION'),
+  updatedAt: dateTime,
+});
+const activityItem = z.discriminatedUnion('type', [
+  contributionActivity,
+  reportActivity,
+  confirmationActivity,
+]) satisfies z.ZodType<ActivityItem>;
+const userActivity = z.object({
+  items: z.array(activityItem),
+  pagination: z.object({
+    hasMore: z.boolean(),
+    nextCursor: z.string().nullable(),
+  }),
+}) satisfies z.ZodType<UserActivity>;
+
+export const reportResponseSchema = successEnvelope(
+  placeReportDetail,
+  responseMeta,
+) satisfies z.ZodType<ApiSuccess<PlaceReportDetail>>;
+
+export const confirmationResponseSchema = successEnvelope(
+  placeConfirmationDetail,
+  responseMeta,
+) satisfies z.ZodType<ApiSuccess<PlaceConfirmationDetail>>;
+
+export const activityResponseSchema = successEnvelope(
+  userActivity,
+  responseMeta,
+) satisfies z.ZodType<ApiSuccess<UserActivity>>;

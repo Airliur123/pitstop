@@ -27,12 +27,20 @@ export const placeConfirmations = mysqlTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     confirmationType: mysqlEnum('confirmation_type', confirmationTypeValues).notNull(),
+    observedAt: timestamp('observed_at', { fsp: 3 }).notNull(),
+    expiresAt: timestamp('expires_at', { fsp: 3 }).notNull(),
+    note: varchar('note', { length: 300 }),
+    placeVersion: int('place_version', { unsigned: true }).notNull(),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
   (table) => [
     uniqueIndex('uq_place_confirmations_user_place').on(table.userId, table.placeId),
     index('idx_place_confirmations_place_type').on(table.placeId, table.confirmationType),
+    index('idx_place_confirmations_place_expiry').on(table.placeId, table.expiresAt, table.userId),
+    index('idx_place_confirmations_user_created').on(table.userId, table.createdAt, table.id),
+    check('chk_place_confirmations_place_version', sql`${table.placeVersion} > 0`),
+    check('chk_place_confirmations_expiry', sql`${table.expiresAt} > ${table.observedAt}`),
   ],
 );
 
@@ -49,12 +57,18 @@ export const placeReports = mysqlTable(
     reportType: mysqlEnum('report_type', reportTypeValues).notNull(),
     description: varchar('description', { length: 1000 }).notNull(),
     proposedValue: json('proposed_value'),
+    evidenceUrl: varchar('evidence_url', { length: 1000 }),
+    evidenceReference: varchar('evidence_reference', { length: 500 }),
     reportStatus: mysqlEnum('report_status', reportStatusValues).notNull().default('PENDING'),
+    submittedPlaceVersion: int('submitted_place_version', { unsigned: true }).notNull(),
     reviewedBy: ulidColumn('reviewed_by').references(() => users.id, {
       onDelete: 'set null',
       onUpdate: 'cascade',
     }),
+    reviewClaimedAt: timestamp('review_claimed_at', { fsp: 3 }),
     reviewedAt: timestamp('reviewed_at', { fsp: 3 }),
+    resolution: varchar('resolution', { length: 500 }),
+    appliedChangeSummary: json('applied_change_summary'),
     version: int('version', { unsigned: true }).notNull().default(1),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
@@ -62,6 +76,16 @@ export const placeReports = mysqlTable(
   (table) => [
     index('idx_place_reports_status_created').on(table.reportStatus, table.createdAt),
     index('idx_place_reports_place').on(table.placeId, table.createdAt),
+    index('idx_place_reports_queue').on(table.reportStatus, table.createdAt, table.id),
+    index('idx_place_reports_type_status').on(
+      table.reportType,
+      table.reportStatus,
+      table.createdAt,
+    ),
+    index('idx_place_reports_place_status').on(table.placeId, table.reportStatus, table.createdAt),
+    index('idx_place_reports_reporter_created').on(table.reportedBy, table.createdAt, table.id),
+    index('idx_place_reports_reviewer_status').on(table.reviewedBy, table.reportStatus),
+    check('chk_place_reports_submitted_place_version', sql`${table.submittedPlaceVersion} > 0`),
     check('chk_place_reports_version_positive', sql`${table.version} > 0`),
   ],
 );

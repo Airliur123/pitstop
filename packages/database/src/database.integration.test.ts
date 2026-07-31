@@ -79,6 +79,8 @@ const expectedTables = [
 describe.sequential('MySQL 8.4 spatial database', () => {
   let container: StartedTestContainer | undefined;
   let legacyContributionId: string;
+  let legacyHistoryIds: readonly string[];
+  let legacyHistoryPlaceId: string;
   let legacyPlaceGeocodingId: string;
   let legacyPreferredGeocodingId: string;
   let migrationFixtureRoot: string | undefined;
@@ -102,6 +104,7 @@ describe.sequential('MySQL 8.4 spatial database', () => {
         '--character-set-server=utf8mb4',
         '--collation-server=utf8mb4_0900_ai_ci',
         '--default-time-zone=+00:00',
+        '--log-bin-trust-function-creators=1',
       ])
       .withExposedPorts(3306)
       .withWaitStrategy(Wait.forLogMessage(/port: 3306.*MySQL Community Server/i))
@@ -117,13 +120,18 @@ describe.sequential('MySQL 8.4 spatial database', () => {
       user: 'pitstop_test',
     });
     const migrationsFolder = fileURLToPath(new URL('../migrations', import.meta.url));
-    const stagedMigrations = await stageMigrationsThrough0008(migrationsFolder);
+    const stagedMigrations = await stageMigrationsThrough(migrationsFolder, 8);
     migrationFixtureRoot = stagedMigrations.root;
     await migrate(drizzle({ client: pool }), { migrationsFolder: stagedMigrations.folder });
     const legacyFixture = await insertLegacyGeocodingMigrationFixture(pool);
     legacyContributionId = legacyFixture.contributionId;
     legacyPlaceGeocodingId = legacyFixture.placeGeocodingId;
     legacyPreferredGeocodingId = legacyFixture.preferredGeocodingId;
+    await setStagedMigrationLimit(stagedMigrations.folder, migrationsFolder, 9);
+    await migrate(drizzle({ client: pool }), { migrationsFolder: stagedMigrations.folder });
+    const historyFixture = await insertLegacyHistoryMigrationFixture(pool);
+    legacyHistoryIds = historyFixture.historyIds;
+    legacyHistoryPlaceId = historyFixture.placeId;
     await migrate(drizzle({ client: pool }), { migrationsFolder });
     await seedDatabase(pool);
   });
@@ -147,7 +155,7 @@ describe.sequential('MySQL 8.4 spatial database', () => {
     const [rows] = await getPool().query<CountRow[]>(
       'SELECT COUNT(*) AS count FROM __drizzle_migrations',
     );
-    expect(Number(rows[0]?.count)).toBe(10);
+    expect(Number(rows[0]?.count)).toBe(11);
   });
 
   it('2a. migration 0009 deterministically deduplicates contribution geocoding only', async () => {
@@ -167,10 +175,86 @@ describe.sequential('MySQL 8.4 spatial database', () => {
     ).toBe(1);
   });
 
+  it('2b. migration 0010 backfills chronological monotonic history versions', async () => {
+    const [historyRows] = await getPool().execute<
+      (RowDataPacket & {
+        readonly id: string;
+        readonly next_version: number;
+        readonly previous_version: number;
+      })[]
+    >(
+      `SELECT id, previous_version, next_version
+       FROM place_change_history
+       WHERE place_id = ?
+       ORDER BY created_at ASC, id ASC`,
+      [legacyHistoryPlaceId],
+    );
+    expect(historyRows.map((row) => row.id)).toEqual(legacyHistoryIds);
+    expect(
+      historyRows.map((row) => [Number(row.previous_version), Number(row.next_version)]),
+    ).toEqual([
+      [4, 5],
+      [5, 6],
+      [6, 7],
+    ]);
+    expect(await placeVersion(getPool(), legacyHistoryPlaceId as Ulid)).toBe(7);
+  });
+
   it('3. creates every required domain table', async () => {
     const [rows] = await getPool().query<RowDataPacket[]>('SHOW TABLES');
     const tables = rows.map((row) => String(Object.values(row)[0])).sort();
     expect(tables.filter((name) => name !== '__drizzle_migrations')).toEqual([...expectedTables]);
+  });
+
+  it('3a. installs Phase 10 queue indexes and append-only governance triggers', async () => {
+    const [indexRows] = await getPool().query<RowDataPacket[]>(
+      `SELECT DISTINCT INDEX_NAME AS value
+       FROM information_schema.statistics
+       WHERE table_schema = DATABASE()
+         AND table_name IN ('place_reports', 'place_confirmations', 'audit_logs')`,
+    );
+    const indexes = indexRows.map((row) => String(row.value));
+    expect(indexes).toEqual(
+      expect.arrayContaining([
+        'idx_audit_created',
+        'idx_place_confirmations_place_expiry',
+        'idx_place_reports_queue',
+        'idx_place_reports_reporter_created',
+      ]),
+    );
+
+    const auditId = createUlid();
+    await getPool().execute(
+      `INSERT INTO audit_logs (
+         id, actor_type, actor_role, action, target_type, target_id, request_id
+       ) VALUES (?, 'SYSTEM', 'SYSTEM', 'TEST_APPEND_ONLY', 'REPORT', ?, ?)`,
+      [auditId, createUlid(), `request-${createUlid()}`],
+    );
+    await expect(
+      getPool().execute('UPDATE audit_logs SET action = ? WHERE id = ?', ['MUTATED', auditId]),
+    ).rejects.toMatchObject({ code: 'ER_SIGNAL_EXCEPTION' });
+    await expect(
+      getPool().execute('DELETE FROM audit_logs WHERE id = ?', [auditId]),
+    ).rejects.toMatchObject({ code: 'ER_SIGNAL_EXCEPTION' });
+
+    const placeId = await seededPlaceId(getPool(), 'data-simulasi-warung-bu-ani');
+    const historyId = createUlid();
+    await getPool().execute(
+      `INSERT INTO place_change_history (
+         id, place_id, source_type, change_type, next_version, changed_fields, new_value
+       ) VALUES (?, ?, 'SYSTEM', 'TEST_APPEND_ONLY', ?, JSON_ARRAY('verificationStatus'),
+         JSON_OBJECT('verificationStatus', 'ADMIN_VERIFIED'))`,
+      [historyId, placeId, await placeVersion(getPool(), placeId)],
+    );
+    await expect(
+      getPool().execute('UPDATE place_change_history SET reason = ? WHERE id = ?', [
+        'mutated',
+        historyId,
+      ]),
+    ).rejects.toMatchObject({ code: 'ER_SIGNAL_EXCEPTION' });
+    await expect(
+      getPool().execute('DELETE FROM place_change_history WHERE id = ?', [historyId]),
+    ).rejects.toMatchObject({ code: 'ER_SIGNAL_EXCEPTION' });
   });
 
   it('4. enforces foreign keys', async () => {
@@ -458,16 +542,21 @@ describe.sequential('MySQL 8.4 spatial database', () => {
   it('8. enforces one active place confirmation per user and place', async () => {
     const userId = await insertUser(getPool(), uniqueEmail('confirmation'));
     const placeId = await seededPlaceId(getPool(), 'data-simulasi-warung-bu-ani');
+    const version = await placeVersion(getPool(), placeId);
     await getPool().execute(
-      `INSERT INTO place_confirmations (id, place_id, user_id, confirmation_type)
-       VALUES (?, ?, ?, 'STILL_VALID')`,
-      [createUlid(), placeId, userId],
+      `INSERT INTO place_confirmations (
+         id, place_id, user_id, confirmation_type, observed_at, expires_at, place_version
+       ) VALUES (?, ?, ?, 'STILL_VALID', CURRENT_TIMESTAMP(3),
+         DATE_ADD(CURRENT_TIMESTAMP(3), INTERVAL 90 DAY), ?)`,
+      [createUlid(), placeId, userId, version],
     );
     await expect(
       getPool().execute(
-        `INSERT INTO place_confirmations (id, place_id, user_id, confirmation_type)
-         VALUES (?, ?, ?, 'PRICE_ACCURATE')`,
-        [createUlid(), placeId, userId],
+        `INSERT INTO place_confirmations (
+           id, place_id, user_id, confirmation_type, observed_at, expires_at, place_version
+         ) VALUES (?, ?, ?, 'PRICE_ACCURATE', CURRENT_TIMESTAMP(3),
+           DATE_ADD(CURRENT_TIMESTAMP(3), INTERVAL 90 DAY), ?)`,
+        [createUlid(), placeId, userId, version],
       ),
     ).rejects.toMatchObject({ code: 'ER_DUP_ENTRY' });
   });
@@ -683,9 +772,10 @@ describe.sequential('MySQL 8.4 spatial database', () => {
     const reportId = createUlid();
     await getPool().execute(
       `INSERT INTO place_reports (
-         id, place_id, reported_by, report_type, description, report_status
-       ) VALUES (?, ?, ?, 'PRICE_CHANGED', 'Integration report', 'PENDING')`,
-      [reportId, placeId, reporterId],
+         id, place_id, reported_by, report_type, description, report_status,
+         submitted_place_version
+       ) VALUES (?, ?, ?, 'PRICE_CHANGED', 'Integration report', 'PENDING', ?)`,
+      [reportId, placeId, reporterId, versionBefore],
     );
     await expect(
       applyReportTransaction(getPool(), {
@@ -728,11 +818,13 @@ describe.sequential('MySQL 8.4 spatial database', () => {
     const reporterId = await insertUser(getPool(), uniqueEmail('optimistic'));
     const placeId = await seededPlaceId(getPool(), 'data-simulasi-warkop-bang-udin');
     const reportId = createUlid();
+    const versionBefore = await placeVersion(getPool(), placeId);
     await getPool().execute(
       `INSERT INTO place_reports (
-         id, place_id, reported_by, report_type, description, report_status
-       ) VALUES (?, ?, ?, 'HOURS_CHANGED', 'Optimistic conflict', 'PENDING')`,
-      [reportId, placeId, reporterId],
+         id, place_id, reported_by, report_type, description, report_status,
+         submitted_place_version
+       ) VALUES (?, ?, ?, 'HOURS_CHANGED', 'Optimistic conflict', 'PENDING', ?)`,
+      [reportId, placeId, reporterId, versionBefore],
     );
     await expect(
       applyReportTransaction(getPool(), {
@@ -1129,14 +1221,26 @@ describe.sequential('MySQL 8.4 spatial database', () => {
   });
 });
 
-async function stageMigrationsThrough0008(
+async function stageMigrationsThrough(
   sourceFolder: string,
+  maximumIndex: number,
 ): Promise<{ readonly folder: string; readonly root: string }> {
   const root = await mkdtemp(join(tmpdir(), 'pitstop-migrations-'));
   const folder = join(root, 'migrations');
   await cp(sourceFolder, folder, { recursive: true });
-  const journalPath = join(folder, 'meta', '_journal.json');
-  const journal = JSON.parse(await readFile(journalPath, 'utf8')) as {
+  await setStagedMigrationLimit(folder, sourceFolder, maximumIndex);
+  return { folder, root };
+}
+
+async function setStagedMigrationLimit(
+  stagedFolder: string,
+  sourceFolder: string,
+  maximumIndex: number,
+): Promise<void> {
+  const journalPath = join(stagedFolder, 'meta', '_journal.json');
+  const sourceJournal = JSON.parse(
+    await readFile(join(sourceFolder, 'meta', '_journal.json'), 'utf8'),
+  ) as {
     readonly dialect: string;
     readonly entries: readonly { readonly idx: number }[];
     readonly version: string;
@@ -1145,15 +1249,46 @@ async function stageMigrationsThrough0008(
     journalPath,
     `${JSON.stringify(
       {
-        ...journal,
-        entries: journal.entries.filter((entry) => entry.idx <= 8),
+        ...sourceJournal,
+        entries: sourceJournal.entries.filter((entry) => entry.idx <= maximumIndex),
       },
       null,
       2,
     )}\n`,
     'utf8',
   );
-  return { folder, root };
+}
+
+async function insertLegacyHistoryMigrationFixture(pool: Pool): Promise<{
+  readonly historyIds: readonly string[];
+  readonly placeId: string;
+}> {
+  const placeId = createUlid();
+  await pool.execute(
+    `INSERT INTO places (
+       id, name, slug, address, district, city, province, location,
+       place_status, verification_status, data_freshness_at, version
+     ) VALUES (?, 'Legacy history fixture', ?, 'Fixture address', 'Fixture district',
+       'Fixture city', 'Fixture province', ST_SRID(POINT(106.8, -6.1), 4326),
+       'DRAFT', 'UNVERIFIED', CURRENT_TIMESTAMP(3), 7)`,
+    [placeId, `legacy-history-${placeId.toLowerCase()}`],
+  );
+  const firstId = createUlid();
+  const tiedIds = [createUlid(), createUlid()].sort();
+  const history = [
+    { createdAt: '2026-07-29 00:00:00.000', id: firstId, name: 'Legacy one' },
+    { createdAt: '2026-07-29 00:00:01.000', id: tiedIds[0] as string, name: 'Legacy two' },
+    { createdAt: '2026-07-29 00:00:01.000', id: tiedIds[1] as string, name: 'Legacy three' },
+  ] as const;
+  for (const entry of history) {
+    await pool.execute(
+      `INSERT INTO place_change_history (
+         id, place_id, source_type, change_type, new_value, created_at
+       ) VALUES (?, ?, 'SYSTEM', 'LEGACY_FIXTURE', JSON_OBJECT('name', ?), ?)`,
+      [entry.id, placeId, entry.name, entry.createdAt],
+    );
+  }
+  return { historyIds: history.map((entry) => entry.id), placeId };
 }
 
 async function insertLegacyGeocodingMigrationFixture(pool: Pool): Promise<{

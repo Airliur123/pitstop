@@ -65,17 +65,8 @@ test.afterAll(async () => {
     ]);
     await databasePool.execute('DELETE FROM contributions WHERE id = ?', [fixtureContributionId]);
   }
-  if (databasePool && fixturePlaceId) {
-    await databasePool.execute('DELETE FROM audit_logs WHERE target_id = ?', [fixturePlaceId]);
-    await databasePool.execute('DELETE FROM place_change_history WHERE place_id = ?', [
-      fixturePlaceId,
-    ]);
-    await databasePool.execute('DELETE FROM operating_hours WHERE place_id = ?', [fixturePlaceId]);
-    await databasePool.execute('DELETE FROM place_facilities WHERE place_id = ?', [fixturePlaceId]);
-    await databasePool.execute('DELETE FROM place_categories WHERE place_id = ?', [fixturePlaceId]);
-    await databasePool.execute('DELETE FROM menus WHERE place_id = ?', [fixturePlaceId]);
-    await databasePool.execute('DELETE FROM places WHERE id = ?', [fixturePlaceId]);
-  }
+  // The published Place and governance records intentionally remain in the disposable E2E
+  // database because audit_logs and place_change_history are append-only.
   if (databasePool && fixtureEmail) {
     await databasePool.execute('DELETE FROM users WHERE normalized_email = ?', [
       fixtureEmail.toLowerCase(),

@@ -41,9 +41,11 @@ export const reportTypeValues = [
   'PRICE_CHANGED',
   'HOURS_CHANGED',
   'LOCATION_INCORRECT',
+  'CATEGORY_INCORRECT',
   'FACILITY_CHANGED',
   'TEMPORARILY_CLOSED',
   'PERMANENTLY_CLOSED',
+  'DUPLICATE_PLACE',
   'OTHER',
 ] as const;
 
@@ -59,6 +61,7 @@ export const confirmationTypeValues = [
   'PRICE_ACCURATE',
   'FACILITIES_ACCURATE',
 ] as const;
+export const auditActorTypeValues = ['USER', 'ADMIN', 'SYSTEM', 'INTEGRATION'] as const;
 export const integrationProcessingStatusValues = [
   'RECEIVED',
   'QUEUED',
@@ -92,3 +95,4 @@ export type AuthProvider = (typeof authProviderValues)[number];
 export type ModerationDecision = (typeof moderationDecisionValues)[number];
 export type ModerationAction = (typeof moderationActionValues)[number];
 export type ReportType = (typeof reportTypeValues)[number];
+export type AuditActorType = (typeof auditActorTypeValues)[number];

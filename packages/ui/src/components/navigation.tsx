@@ -6,10 +6,12 @@ import {
   ChevronLeft,
   ChevronRight,
   CirclePlus,
+  ClipboardList,
   Home,
   LayoutDashboard,
   Menu,
   RefreshCw,
+  ScrollText,
   ShieldCheck,
   UserRound,
 } from 'lucide-react';
@@ -89,11 +91,13 @@ export function MobileBottomNavigation({
 }
 
 export type AdminNavigationValue =
-  'dashboard' | 'integrations' | 'moderation' | 'places' | 'reports';
+  'audit' | 'dashboard' | 'integrations' | 'moderation' | 'places' | 'reports';
 
 const adminItems = [
   { href: '/', icon: LayoutDashboard, label: 'Dashboard', value: 'dashboard' },
   { href: '/contributions', icon: ShieldCheck, label: 'Moderasi', value: 'moderation' },
+  { href: '/reports', icon: ClipboardList, label: 'Laporan', value: 'reports' },
+  { href: '/audit', icon: ScrollText, label: 'Audit', value: 'audit' },
   {
     href: '/integrations/google-form',
     icon: RefreshCw,

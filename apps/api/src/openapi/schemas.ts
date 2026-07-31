@@ -138,6 +138,7 @@ export const placeDetailResponseSchema = {
       type: 'object' as const,
       required: [
         'id',
+        'version',
         'slug',
         'name',
         'latitude',
@@ -151,6 +152,7 @@ export const placeDetailResponseSchema = {
       ],
       properties: {
         id: { type: 'string' as const },
+        version: { type: 'integer' as const, minimum: 1 },
         slug: { type: 'string' as const },
         name: { type: 'string' as const },
         latitude: { type: 'number' as const },
@@ -195,6 +197,89 @@ export const recommendationsResponseSchema = {
         cache: { type: 'string' as const, enum: ['HIT', 'MISS', 'BYPASS'] },
       },
     },
+  },
+};
+
+const privateObjectResponse = {
+  type: 'object' as const,
+  required: ['success', 'data', 'requestId', 'meta'],
+  properties: {
+    success: { type: 'boolean' as const, enum: [true] },
+    data: { type: 'object' as const },
+    requestId: { type: 'string' as const },
+    meta: requestMetadata,
+  },
+};
+
+export const reportResponseSchema = privateObjectResponse;
+export const confirmationResponseSchema = privateObjectResponse;
+export const activityResponseSchema = privateObjectResponse;
+export const adminReportQueueResponseSchema = privateObjectResponse;
+export const adminReportDetailResponseSchema = privateObjectResponse;
+export const reportMutationResponseSchema = privateObjectResponse;
+export const auditLogResponseSchema = privateObjectResponse;
+
+export const createReportRequestSchema = {
+  type: 'object' as const,
+  additionalProperties: false,
+  required: ['reportType', 'explanation', 'proposedChange', 'expectedPlaceVersion'],
+  properties: {
+    reportType: {
+      type: 'string' as const,
+      enum: [
+        'PRICE_CHANGED',
+        'HOURS_CHANGED',
+        'LOCATION_INCORRECT',
+        'CATEGORY_INCORRECT',
+        'FACILITY_CHANGED',
+        'TEMPORARILY_CLOSED',
+        'PERMANENTLY_CLOSED',
+        'DUPLICATE_PLACE',
+        'OTHER',
+      ],
+    },
+    explanation: { type: 'string' as const, minLength: 20, maxLength: 1_000 },
+    proposedChange: { type: 'object' as const },
+    evidenceUrl: { type: 'string' as const, format: 'uri', maxLength: 1_000 },
+    evidenceReference: { type: 'string' as const, maxLength: 500 },
+    expectedPlaceVersion: { type: 'integer' as const, minimum: 1 },
+  },
+};
+
+export const confirmationRequestSchema = {
+  type: 'object' as const,
+  additionalProperties: false,
+  required: ['confirmationType', 'confirmedAt', 'expectedPlaceVersion'],
+  properties: {
+    confirmationType: {
+      type: 'string' as const,
+      enum: ['STILL_VALID', 'PRICE_ACCURATE', 'FACILITIES_ACCURATE'],
+    },
+    confirmedAt: { type: 'string' as const, format: 'date-time' },
+    note: { type: 'string' as const, maxLength: 300 },
+    expectedPlaceVersion: { type: 'integer' as const, minimum: 1 },
+  },
+};
+
+export const applyReportRequestSchema = {
+  type: 'object' as const,
+  additionalProperties: false,
+  required: ['resolution', 'approvedPatch', 'expectedReportVersion', 'expectedPlaceVersion'],
+  properties: {
+    resolution: { type: 'string' as const, minLength: 10, maxLength: 500 },
+    approvedPatch: { type: 'object' as const },
+    expectedReportVersion: { type: 'integer' as const, minimum: 1 },
+    expectedPlaceVersion: { type: 'integer' as const, minimum: 1 },
+  },
+};
+
+export const rejectReportRequestSchema = {
+  type: 'object' as const,
+  additionalProperties: false,
+  required: ['resolution', 'expectedVersion'],
+  properties: {
+    resolution: { type: 'string' as const, minLength: 10, maxLength: 500 },
+    expectedVersion: { type: 'integer' as const, minimum: 1 },
   },
 };
 

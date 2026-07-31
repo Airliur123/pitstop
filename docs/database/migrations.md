@@ -25,6 +25,15 @@ Phase 7 migration `0006_perpetual_lorna_dane.sql` is generated from the modular 
 adds only the contributor ownership and submitted-activity indexes. Its operational and rollback
 notes are in [the contribution guide](../contributions/README.md#persistence-and-migration).
 
+Phase 10 migration `0010_stale_queen_noir.sql` is additive to Phase 9. It completes reports,
+confirmations, verification metadata, Place history, and generic audit columns; backfills existing
+rows before enforcing non-null constraints; adds queue/recency indexes; and installs database
+triggers that reject updates or deletes of `place_change_history` and `audit_logs`. Its data-safety,
+foreign-key, and event-store boundaries are documented in the
+[Phase 10 governance guide](../governance/phase-10.md#migration-0010).
+With MySQL binary logging enabled, the database must set `log_bin_trust_function_creators=1` before
+a non-`SUPER` migration user applies 0010. Local Compose already supplies this server option.
+
 MySQL DDL auto-commits, so a failed initial migration may leave partial tables. The guarded local
 `db:reset` exists only for development/test recovery. Applied shared-environment migrations must
 never be edited; corrections require a forward migration.

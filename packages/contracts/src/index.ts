@@ -62,3 +62,4 @@ export * from './auth';
 export * from './contributions';
 export * from './integrations';
 export * from './public-api';
+export * from './reports';
