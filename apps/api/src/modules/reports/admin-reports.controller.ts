@@ -46,6 +46,7 @@ import type { FastifyRequest } from 'fastify';
 
 import { createSuccessResponse } from '../../common/http/response';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
+import { correlationIdForRequest } from '../../http/request-identifiers';
 import {
   adminReportDetailResponseSchema,
   adminReportQueueResponseSchema,
@@ -129,7 +130,7 @@ export class AdminReportsController {
         reportId,
         input.expectedVersion,
         parseIdempotencyKey(idempotencyKey),
-        request.id,
+        correlationIdForRequest(request),
       ),
       {},
     );
@@ -158,7 +159,7 @@ export class AdminReportsController {
         reportId,
         input,
         parseIdempotencyKey(idempotencyKey),
-        request.id,
+        correlationIdForRequest(request),
       ),
       {},
     );
@@ -187,7 +188,7 @@ export class AdminReportsController {
         reportId,
         input,
         parseIdempotencyKey(idempotencyKey),
-        request.id,
+        correlationIdForRequest(request),
       ),
       {},
     );

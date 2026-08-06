@@ -33,6 +33,8 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
+import { UpdateNotice } from '../../../components/pwa-lifecycle';
+
 const previewSchema = z.object({
   name: z.string().trim().min(3, 'Gunakan minimal 3 karakter.'),
   notes: z.string().trim().max(120, 'Maksimum 120 karakter.'),
@@ -58,6 +60,7 @@ function CatalogSection({
 
 export function UiCatalog() {
   const [submitted, setSubmitted] = useState(false);
+  const [updateVisible, setUpdateVisible] = useState(false);
   const {
     formState: { errors },
     handleSubmit,
@@ -211,6 +214,11 @@ export function UiCatalog() {
           </div>
           <EmptyState title="Belum ada data">Coba ubah filter atau kembali nanti.</EmptyState>
           <ErrorState />
+          <div>
+            <Button onClick={() => setUpdateVisible(true)} type="button" variant="secondary">
+              Tampilkan pemberitahuan pembaruan
+            </Button>
+          </div>
         </CatalogSection>
 
         <CatalogSection title="Overlays and keyboard">
@@ -255,6 +263,9 @@ export function UiCatalog() {
           />
         </CatalogSection>
       </main>
+      {updateVisible ? (
+        <UpdateNotice onApply={() => setUpdateVisible(false)} status="available" />
+      ) : null}
       <MobileBottomNavigation />
     </div>
   );

@@ -15,6 +15,7 @@ import { WORKER_ENVIRONMENT, type WorkerEnvironmentProvider } from './configurat
 import { GEOCODING_PORT, type GeocodingPort } from './geocoding.port';
 import { IntegrationWorkerRepository } from './integration-worker.repository';
 import { PermanentWorkerError } from './job-policy';
+import { sanitizeJobIdentifiers } from './worker-observability';
 
 @Injectable()
 export class IntegrationJobService {
@@ -26,7 +27,9 @@ export class IntegrationJobService {
   ) {}
 
   async processSubmission(value: unknown): Promise<GeocodeContributionJob | null> {
-    const job = processGoogleFormSubmissionJobSchema.parse(value) as ProcessGoogleFormSubmissionJob;
+    const job = sanitizeJobIdentifiers(
+      processGoogleFormSubmissionJobSchema.parse(value) as ProcessGoogleFormSubmissionJob,
+    );
     const startedAt = Date.now();
     const next = await this.repository.processSubmission(job.inboxId);
     this.logSuccess('process-google-form-submission', job, startedAt, next?.contributionId);
@@ -34,7 +37,9 @@ export class IntegrationJobService {
   }
 
   async geocode(value: unknown): Promise<DetectDuplicatePlaceJob | null> {
-    const job = geocodeContributionJobSchema.parse(value) as GeocodeContributionJob;
+    const job = sanitizeJobIdentifiers(
+      geocodeContributionJobSchema.parse(value) as GeocodeContributionJob,
+    );
     const startedAt = Date.now();
     const input = await this.repository.geocodeInput(job);
     if (!input) throw new PermanentWorkerError('GEOCODING_SUBJECT_NOT_FOUND');
@@ -73,7 +78,9 @@ export class IntegrationJobService {
   }
 
   async detectDuplicates(value: unknown): Promise<void> {
-    const job = detectDuplicatePlaceJobSchema.parse(value) as DetectDuplicatePlaceJob;
+    const job = sanitizeJobIdentifiers(
+      detectDuplicatePlaceJobSchema.parse(value) as DetectDuplicatePlaceJob,
+    );
     const startedAt = Date.now();
     await this.repository.markDuplicateProcessing(job.inboxId);
     const hints = await this.repository.findDuplicateHints(

@@ -1,4 +1,4 @@
-import { Controller, Get, Inject, Param, Query, Req } from '@nestjs/common';
+import { Controller, Get, Header, Inject, Param, Query, Req } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiInternalServerErrorResponse,
@@ -39,6 +39,7 @@ export class PublicPlacesController {
   constructor(@Inject(PublicPlacesService) private readonly places: PublicPlacesService) {}
 
   @Get()
+  @Header('Cache-Control', 'no-store')
   @ApiOperation({
     operationId: 'searchPublicPlaces',
     summary: 'Search verified active places within at most five kilometres.',
@@ -80,6 +81,7 @@ export class PublicPlacesController {
   }
 
   @Get(':slug')
+  @Header('Cache-Control', 'no-store')
   @ApiOperation({
     operationId: 'getPublicPlaceBySlug',
     summary: 'Get a verified active place using its canonical public slug.',

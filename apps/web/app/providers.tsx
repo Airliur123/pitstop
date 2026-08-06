@@ -5,6 +5,8 @@ import type { ReactNode } from 'react';
 import { useState } from 'react';
 
 import { AuthProvider } from '../components/auth-provider';
+import { ClientObservability } from '../components/client-observability';
+import { PwaLifecycle } from '../components/pwa-lifecycle';
 import { LocationProvider } from '../hooks/use-location';
 import { ApiClientValidationError, ApiProblem } from '../lib/api/client';
 
@@ -41,7 +43,11 @@ export function Providers({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <LocationProvider>{children}</LocationProvider>
+        <LocationProvider>
+          <PwaLifecycle />
+          <ClientObservability />
+          {children}
+        </LocationProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

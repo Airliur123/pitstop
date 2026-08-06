@@ -1,4 +1,4 @@
-import { Controller, Get, Inject, Query, Req } from '@nestjs/common';
+import { Controller, Get, Header, Inject, Query, Req } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiInternalServerErrorResponse,
@@ -25,6 +25,7 @@ export class RecommendationsController {
   ) {}
 
   @Get()
+  @Header('Cache-Control', 'no-store')
   @ApiOperation({
     operationId: 'getPublicRecommendations',
     summary: 'Return one primary recommendation and at most three alternatives.',

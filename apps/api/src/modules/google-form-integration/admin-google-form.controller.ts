@@ -33,6 +33,7 @@ import type { FastifyRequest } from 'fastify';
 
 import { createSuccessResponse } from '../../common/http/response';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
+import { correlationIdForRequest } from '../../http/request-identifiers';
 import {
   googleFormIntegrationStatusResponseSchema,
   googleFormReplayResponseSchema,
@@ -121,6 +122,10 @@ export class AdminGoogleFormController {
     @Param('id') id: string,
     @Req() request: FastifyRequest,
   ): Promise<ApiSuccess<ReplayGoogleFormSubmissionResult>> {
-    return createSuccessResponse(request, await this.integration.replay(admin, id, request.id), {});
+    return createSuccessResponse(
+      request,
+      await this.integration.replay(admin, id, correlationIdForRequest(request)),
+      {},
+    );
   }
 }

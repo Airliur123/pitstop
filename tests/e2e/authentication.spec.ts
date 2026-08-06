@@ -4,6 +4,7 @@ import { expect, type APIRequestContext, type Page, test } from '@playwright/tes
 import { createPool, type Pool } from 'mysql2/promise';
 
 const mailpitBaseUrl = 'http://127.0.0.1:8025';
+const e2eApiBaseUrl = 'http://localhost:3102/api/v1';
 
 interface MailpitMessage {
   readonly ID: string;
@@ -98,10 +99,32 @@ test('@auth-core guest signs in from a protected route, keeps an HttpOnly sessio
   await requestLink(page, email);
 
   const token = await magicToken(request, email);
+  const activityRequest = page.waitForRequest(
+    (candidate) => candidate.url() === `${e2eApiBaseUrl}/activity?limit=20`,
+  );
+  const activityResponse = page.waitForResponse(
+    (candidate) => candidate.url() === `${e2eApiBaseUrl}/activity?limit=20`,
+  );
   await page.goto(`/auth/verify?token=${token}`);
   await expect(page).toHaveURL('/activity');
   await expect(page.getByRole('heading', { name: 'Aktivitas', exact: true })).toBeVisible();
   await expect(page).not.toHaveURL(/token=/);
+  const requestHeaders = await (await activityRequest).allHeaders();
+  const response = await activityResponse;
+  const responseBody = await response.json();
+  expect(requestHeaders.cookie).toContain('pitstop_session=');
+  expect(response.status()).toBe(200);
+  expect(response.headers()).toMatchObject({
+    'access-control-allow-credentials': 'true',
+    'access-control-allow-origin': 'http://localhost:3100',
+    'cache-control': 'no-store, private',
+    pragma: 'no-cache',
+  });
+  expect(responseBody).toMatchObject({
+    data: { items: [], pagination: { hasMore: false, nextCursor: null } },
+    success: true,
+  });
+  await expect(page.getByRole('heading', { name: 'Aktivitas masih kosong' })).toBeVisible();
   expect(await page.evaluate(() => document.cookie)).not.toContain('pitstop_session');
   const sessionCookie = (await page.context().cookies()).find(
     (cookie) => cookie.name === 'pitstop_session',
@@ -117,12 +140,30 @@ test('@auth-core guest signs in from a protected route, keeps an HttpOnly sessio
     ),
   ).toEqual([]);
 
+  await page.evaluate(async () => {
+    const unexpectedPrivateCache = await caches.open('pitstop-web-v1-public-api');
+    await unexpectedPrivateCache.put(
+      '/api/v1/auth/session',
+      new Response('unexpected private session'),
+    );
+    const legacyPrivateCache = await caches.open('apis');
+    await legacyPrivateCache.put('/activity', new Response('unexpected private activity'));
+    const safeStaticCache = await caches.open('pitstop-web-v1-static');
+    await safeStaticCache.put(
+      '/_next/static/chunks/logout-regression-12345678.js',
+      new Response('safe static'),
+    );
+  });
   await page.getByRole('button', { name: 'Keluar' }).click();
   await expect(page).toHaveURL('/activity');
   await expect(page.getByText('Aktivitas tersimpan di akun')).toBeVisible();
   expect((await page.context().cookies()).some((cookie) => cookie.name === 'pitstop_session')).toBe(
     false,
   );
+  await expect
+    .poll(() => page.evaluate(() => caches.keys()))
+    .not.toEqual(expect.arrayContaining(['apis', 'pitstop-web-v1-public-api']));
+  expect(await page.evaluate(() => caches.keys())).toContain('pitstop-web-v1-static');
 
   await page.goto(`/auth/verify?token=${token}`);
   await expect(page).toHaveURL('/login?state=invalid');

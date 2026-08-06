@@ -53,6 +53,7 @@ import type { FastifyRequest } from 'fastify';
 import { ApiProblemException } from '../../common/errors/api-problem.exception';
 import { createSuccessResponse } from '../../common/http/response';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
+import { correlationIdForRequest } from '../../http/request-identifiers';
 import {
   adminContributionDetailResponseSchema,
   adminDashboardResponseSchema,
@@ -271,7 +272,7 @@ export class AdminModerationController {
         id,
         input,
         parseIdempotencyKey(idempotencyKey),
-        request.id,
+        correlationIdForRequest(request),
       ),
       {},
     );

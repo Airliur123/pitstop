@@ -175,7 +175,7 @@ interface ActivityRow extends RowDataPacket {
   readonly created_at: Date | string;
   readonly id: string;
   readonly place_id: string | null;
-  readonly place_name: string;
+  readonly place_name: string | null;
   readonly report_type: ReportType | null;
   readonly updated_at: Date | string;
 }
@@ -1673,22 +1673,26 @@ function mapActivityRow(row: ActivityRow): ActivityItem {
         type: 'CONTRIBUTION',
       };
     case 'REPORT':
-      if (!row.place_id || !row.report_type) throw new Error('Invalid report activity row');
+      if (!row.place_id || !row.place_name || !row.report_type) {
+        throw new Error('Invalid report activity row');
+      }
       return {
         ...common,
         placeId: row.place_id,
+        placeName: row.place_name,
         reportType: row.report_type,
         status: row.activity_status as ReportStatus,
         type: 'REPORT',
       };
     case 'CONFIRMATION':
-      if (!row.place_id || !row.confirmation_type) {
+      if (!row.place_id || !row.place_name || !row.confirmation_type) {
         throw new Error('Invalid confirmation activity row');
       }
       return {
         ...common,
         confirmationType: row.confirmation_type,
         placeId: row.place_id,
+        placeName: row.place_name,
         status: row.activity_status === 'EXPIRED' ? 'EXPIRED' : 'ACTIVE',
         type: 'CONFIRMATION',
       };

@@ -6,6 +6,7 @@ import { expect, type APIRequestContext, type Page, test } from '@playwright/tes
 import { createPool, type Pool, type RowDataPacket } from 'mysql2/promise';
 
 const adminBaseUrl = 'http://localhost:3101';
+const e2eApiBaseUrl = 'http://localhost:3102/api/v1';
 const mailpitBaseUrl = 'http://127.0.0.1:8025';
 
 interface CategoryRow extends RowDataPacket {
@@ -184,8 +185,33 @@ test('@admin-core user report is claimed and applied transactionally, then confi
   const rejectedReportId = new URL(page.url()).pathname.match(/^\/reports\/([^/]+)\/success$/)?.[1];
   if (!rejectedReportId) throw new Error('Rejected report success URL did not contain an ID.');
 
+  const activityRequest = page.waitForRequest(
+    (candidate) => candidate.url() === `${e2eApiBaseUrl}/activity?limit=20`,
+  );
+  const activityResponse = page.waitForResponse(
+    (candidate) => candidate.url() === `${e2eApiBaseUrl}/activity?limit=20`,
+  );
   await page.goto('/activity');
+  const activityRequestHeaders = await (await activityRequest).allHeaders();
+  const activityHttpResponse = await activityResponse;
+  expect(activityRequestHeaders.cookie).toContain('pitstop_session=');
+  expect(activityHttpResponse.status()).toBe(200);
+  expect(activityHttpResponse.headers()).toMatchObject({
+    'access-control-allow-credentials': 'true',
+    'access-control-allow-origin': 'http://localhost:3100',
+    'cache-control': 'no-store, private',
+    pragma: 'no-cache',
+  });
   await expect(page.getByRole('heading', { name: 'Aktivitas' })).toBeVisible();
+  await expect(page.getByText('Laporan perubahan')).toHaveCount(2);
+  await expect(page.getByText(initialPlaceName)).toHaveCount(2);
+  const filteredActivityRequest = page.waitForRequest(
+    (candidate) =>
+      candidate.url() === `${e2eApiBaseUrl}/activity?limit=20&status=PENDING&type=REPORT`,
+  );
+  await page.getByLabel('Jenis').selectOption('REPORT');
+  await page.getByLabel('Status').selectOption('PENDING');
+  await filteredActivityRequest;
   await expect(page.getByText('Laporan perubahan')).toHaveCount(2);
   await expect(page.getByText(initialPlaceName)).toHaveCount(2);
   await page.goto(`/places/${fixtureSlug}`);

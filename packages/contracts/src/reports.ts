@@ -116,7 +116,7 @@ export type ActivityItem =
       createdAt: string;
       id: string;
       placeId: string | null;
-      placeName: string;
+      placeName: string | null;
       status: ContributionStatus;
       type: 'CONTRIBUTION';
       updatedAt: string;

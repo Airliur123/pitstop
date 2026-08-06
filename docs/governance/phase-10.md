@@ -71,6 +71,10 @@ mutation. The policy is deterministic; it does not use a score or probabilistic 
 `/activity` web route has guest sign-in, loading, empty, error/retry, filtering, next/previous
 pagination, and links to the owned contribution/report or public Place detail.
 
+A newly created contribution `DRAFT` may not have a Place or a completed name yet, so its activity
+item preserves `placeId: null` and `placeName: null`; clients keep the item and use a neutral draft
+label until the contribution is completed.
+
 The response is private and `no-store`. TanStack Query keys include the authenticated user ID, and
 logout removes the user's private cached queries before clearing the in-memory session.
 

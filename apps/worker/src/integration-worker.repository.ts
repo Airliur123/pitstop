@@ -34,6 +34,11 @@ interface CandidateRow extends RowDataPacket {
   readonly id: string;
 }
 
+interface StageCandidateRow extends CandidateRow {
+  readonly stage_status: string;
+  readonly updated_at: Date | string;
+}
+
 interface GeocodeRow extends RowDataPacket {
   readonly contribution_id: string;
   readonly correlation_id: string;
@@ -53,6 +58,11 @@ export interface DuplicateHint {
   readonly distanceMeters: number;
   readonly matchedSignals: readonly string[];
   readonly score: number;
+}
+
+export interface ClaimedJobBatch<T> {
+  readonly jobs: readonly T[];
+  readonly staleRecovered: number;
 }
 
 @Injectable()
@@ -85,10 +95,18 @@ export class IntegrationWorkerRepository {
     leaseSeconds: number,
     limit = 100,
   ): Promise<GeocodeContributionJob[]> {
+    const batch = await this.claimGeocodingCandidatesWithStats(leaseSeconds, limit);
+    return [...batch.jobs];
+  }
+
+  async claimGeocodingCandidatesWithStats(
+    leaseSeconds: number,
+    limit = 100,
+  ): Promise<ClaimedJobBatch<GeocodeContributionJob>> {
     const leaseCutoff = new Date(Date.now() - leaseSeconds * 1_000);
     const rows = await this.withTransaction(async (connection) => {
-      const [candidates] = await connection.query<CandidateRow[]>(
-        `SELECT id, correlation_id, contribution_id
+      const [candidates] = await connection.query<StageCandidateRow[]>(
+        `SELECT id, correlation_id, contribution_id, geocoding_status AS stage_status, updated_at
          FROM google_form_submissions
          WHERE contribution_id IS NOT NULL
            AND processing_status NOT IN ('COMPLETED', 'DEAD_LETTER', 'REJECTED_INVALID')
@@ -117,17 +135,29 @@ export class IntegrationWorkerRepository {
       }
       return candidates;
     });
-    return rows.flatMap(geocodingJobFromCandidate);
+    return {
+      jobs: rows.flatMap(geocodingJobFromCandidate),
+      staleRecovered: rows.filter((row) => wasStaleStage(row, leaseCutoff)).length,
+    };
   }
 
   async claimDuplicateCandidates(
     leaseSeconds: number,
     limit = 100,
   ): Promise<DetectDuplicatePlaceJob[]> {
+    const batch = await this.claimDuplicateCandidatesWithStats(leaseSeconds, limit);
+    return [...batch.jobs];
+  }
+
+  async claimDuplicateCandidatesWithStats(
+    leaseSeconds: number,
+    limit = 100,
+  ): Promise<ClaimedJobBatch<DetectDuplicatePlaceJob>> {
     const leaseCutoff = new Date(Date.now() - leaseSeconds * 1_000);
     const rows = await this.withTransaction(async (connection) => {
-      const [candidates] = await connection.query<CandidateRow[]>(
-        `SELECT id, correlation_id, contribution_id
+      const [candidates] = await connection.query<StageCandidateRow[]>(
+        `SELECT id, correlation_id, contribution_id,
+           duplicate_detection_status AS stage_status, updated_at
          FROM google_form_submissions
          WHERE contribution_id IS NOT NULL
            AND processing_status NOT IN ('COMPLETED', 'DEAD_LETTER', 'REJECTED_INVALID')
@@ -157,7 +187,10 @@ export class IntegrationWorkerRepository {
       }
       return candidates;
     });
-    return rows.flatMap(duplicateJobFromCandidate);
+    return {
+      jobs: rows.flatMap(duplicateJobFromCandidate),
+      staleRecovered: rows.filter((row) => wasStaleStage(row, leaseCutoff)).length,
+    };
   }
 
   async markQueued(inboxId: string): Promise<void> {
@@ -530,4 +563,13 @@ function duplicateJobFromCandidate(row: CandidateRow): DetectDuplicatePlaceJob[]
       requestId: row.correlation_id,
     },
   ];
+}
+
+function wasStaleStage(row: StageCandidateRow, leaseCutoff: Date): boolean {
+  const updatedAt = row.updated_at instanceof Date ? row.updated_at : new Date(row.updated_at);
+  return (
+    row.stage_status === 'PROCESSING' &&
+    Number.isFinite(updatedAt.getTime()) &&
+    updatedAt.getTime() <= leaseCutoff.getTime()
+  );
 }

@@ -7,6 +7,7 @@ const moderationActionSet = new Set<string>(moderationActions);
 const reportActions = ['apply', 'claim', 'reject'] as const;
 const reportActionSet = new Set<string>(reportActions);
 const ulid = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+const ADMIN_PROXY_BODY_LIMIT_BYTES = 256 * 1_024;
 const forwardedRequestHeaders = [
   'accept',
   'content-type',
@@ -22,6 +23,7 @@ const forwardedResponseHeaders = [
   'content-type',
   'pragma',
   'retry-after',
+  'x-correlation-id',
   'x-request-id',
 ] as const;
 
@@ -95,24 +97,57 @@ export async function proxyAdminMutation(
       title: 'Untrusted request origin',
     });
   }
+  if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) {
+    return problemResponse(request, {
+      code: 'CONTENT_TYPE_UNSUPPORTED',
+      detail: 'Admin mutations require an application/json request body.',
+      status: 415,
+      title: 'Unsupported content type',
+    });
+  }
+  const declaredLength = Number(request.headers.get('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > ADMIN_PROXY_BODY_LIMIT_BYTES) {
+    return problemResponse(request, {
+      code: 'REQUEST_BODY_TOO_LARGE',
+      detail: 'The admin mutation body exceeds the configured limit.',
+      status: 413,
+      title: 'Request body too large',
+    });
+  }
 
   const headers = new Headers();
   for (const name of forwardedRequestHeaders) {
     const value = request.headers.get(name);
     if (value !== null) headers.set(name, value);
   }
+  const requestId = safeTransportIdentifier(request.headers.get('x-request-id')) ?? randomUUID();
+  const correlationId =
+    safeCorrelationIdentifier(request.headers.get('x-correlation-id')) ??
+    safeCorrelationIdentifier(requestId) ??
+    randomUUID();
+  headers.set('x-correlation-id', correlationId);
+  headers.set('x-request-id', requestId);
   headers.set('origin', configuration.adminOrigin);
   headers.set('referer', `${configuration.adminOrigin}/`);
 
   try {
+    const body = await request.arrayBuffer();
+    if (body.byteLength > ADMIN_PROXY_BODY_LIMIT_BYTES) {
+      return problemResponse(request, {
+        code: 'REQUEST_BODY_TOO_LARGE',
+        detail: 'The admin mutation body exceeds the configured limit.',
+        status: 413,
+        title: 'Request body too large',
+      });
+    }
     const upstream = await fetch(`${configuration.apiBaseUrl}${targetPath(target)}`, {
-      body: await request.arrayBuffer(),
+      body,
       cache: 'no-store',
       headers,
       method: 'POST',
       redirect: 'manual',
     });
-    return upstreamResponse(upstream);
+    return upstreamResponse(upstream, requestId, correlationId);
   } catch {
     return problemResponse(request, {
       code: 'ADMIN_PROXY_UPSTREAM_UNAVAILABLE',
@@ -132,7 +167,11 @@ export function problemResponse(
     title: string;
   }>,
 ): Response {
-  const requestId = safeRequestId(request.headers.get('x-request-id')) ?? randomUUID();
+  const requestId = safeTransportIdentifier(request.headers.get('x-request-id')) ?? randomUUID();
+  const correlationId =
+    safeCorrelationIdentifier(request.headers.get('x-correlation-id')) ??
+    safeCorrelationIdentifier(requestId) ??
+    randomUUID();
   const instance = new URL(request.url).pathname;
   return Response.json(
     {
@@ -147,7 +186,7 @@ export function problemResponse(
       instance,
     },
     {
-      headers: privateResponseHeaders('application/problem+json', requestId),
+      headers: privateResponseHeaders('application/problem+json', requestId, correlationId),
       status: problem.status,
     },
   );
@@ -178,7 +217,10 @@ function normalizedHttpUrl(value: string): string {
 
 function requestOrigin(request: Request): string | null {
   const origin = request.headers.get('origin');
-  if (origin !== null) return normalizedOrigin(origin);
+  if (origin !== null) {
+    const normalized = normalizedOrigin(origin);
+    return normalized === origin ? normalized : null;
+  }
   const referer = request.headers.get('referer');
   return referer === null ? null : normalizedOrigin(referer);
 }
@@ -204,7 +246,7 @@ function targetPath(target: AdminMutationTarget): string {
   }
 }
 
-function upstreamResponse(upstream: Response): Response {
+function upstreamResponse(upstream: Response, requestId: string, correlationId: string): Response {
   const headers = new Headers();
   for (const name of forwardedResponseHeaders) {
     const value = upstream.headers.get(name);
@@ -214,6 +256,8 @@ function upstreamResponse(upstream: Response): Response {
   if (setCookie !== null) headers.append('set-cookie', setCookie);
   headers.set('cache-control', 'no-store, private');
   headers.set('pragma', 'no-cache');
+  if (!headers.has('x-correlation-id')) headers.set('x-correlation-id', correlationId);
+  if (!headers.has('x-request-id')) headers.set('x-request-id', requestId);
   return new Response(upstream.body, {
     headers,
     status: upstream.status,
@@ -221,16 +265,31 @@ function upstreamResponse(upstream: Response): Response {
   });
 }
 
-function privateResponseHeaders(contentType: string, requestId: string): Headers {
+function privateResponseHeaders(
+  contentType: string,
+  requestId: string,
+  correlationId: string,
+): Headers {
   return new Headers({
     'cache-control': 'no-store, private',
     'content-type': contentType,
     pragma: 'no-cache',
+    'x-correlation-id': correlationId,
     'x-request-id': requestId,
   });
 }
 
-function safeRequestId(value: string | null): string | null {
-  if (value === null || value.length > 128 || !/^[A-Za-z0-9._:-]+$/.test(value)) return null;
+function safeTransportIdentifier(value: string | null): string | null {
+  if (
+    value === null ||
+    value.length > 128 ||
+    !/^[A-Za-z0-9](?:[A-Za-z0-9._:-]{0,127})$/.test(value)
+  ) {
+    return null;
+  }
   return value;
+}
+
+function safeCorrelationIdentifier(value: string | null): string | null {
+  return value !== null && /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,63})$/.test(value) ? value : null;
 }
