@@ -14,6 +14,7 @@ describe('admin authentication verification bridge', () => {
 
   it('returns the host-only API session cookie from the separate admin origin', async () => {
     vi.stubEnv('NEXT_PUBLIC_API_BASE_URL', apiBaseUrl);
+    vi.stubEnv('ADMIN_BASE_URL', adminOrigin);
     const sessionCookie =
       'pitstop_session=opaque-session; HttpOnly; Path=/; SameSite=Lax; Max-Age=3600; Secure';
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
@@ -42,16 +43,29 @@ describe('admin authentication verification bridge', () => {
     const token = 'a'.repeat(43);
 
     const response = await GET(
-      new NextRequest(`${adminOrigin}/auth/verify?token=${encodeURIComponent(token)}`),
+      new NextRequest(`${adminOrigin}/auth/verify?token=${encodeURIComponent(token)}`, {
+        headers: {
+          'X-Correlation-Id': 'admin-correlation',
+          'X-Request-Id': 'admin-request',
+        },
+      }),
     );
 
     expect(fetchMock).toHaveBeenCalledWith(
       `${apiBaseUrl}/auth/email/verify`,
-      expect.objectContaining({ method: 'POST' }),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'X-Correlation-Id': 'admin-correlation',
+          'X-Request-Id': 'admin-request',
+        }),
+        method: 'POST',
+      }),
     );
     expect(response.status).toBe(303);
     expect(response.headers.get('location')).toBe(`${adminOrigin}/`);
     expect(response.headers.get('set-cookie')).toBe(sessionCookie);
     expect(response.headers.get('cache-control')).toBe('no-store, private');
+    expect(response.headers.get('x-correlation-id')).toBe('admin-correlation');
+    expect(response.headers.get('x-request-id')).toBe('admin-request');
   });
 });

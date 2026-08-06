@@ -20,6 +20,7 @@ import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 
 import { ApiProblemException } from '../../common/errors/api-problem.exception';
 import { API_ENVIRONMENT, type ApiEnvironmentProvider } from '../../configuration';
+import { correlationIdForRequest } from '../../http/request-identifiers';
 import { GoogleFormRepository, GoogleFormRepositoryError } from './google-form.repository';
 import { GoogleFormRateLimitService } from './google-form-rate-limit.service';
 import { type VerifiedIntegrationRequest, verifyIntegrationRequest } from './integration-security';
@@ -44,6 +45,7 @@ export class GoogleFormService {
       readonly timestamp: unknown;
     },
   ): Promise<GoogleFormAcceptedSubmission> {
+    const correlationId = correlationIdForRequest(request);
     this.assertContentType(request);
     const canonicalBody = this.canonicalBody(body);
     let verified: VerifiedIntegrationRequest;
@@ -56,7 +58,7 @@ export class GoogleFormService {
       await this.rateLimit.enforceInbound(verified.sourceId, request.ip);
     } catch (error) {
       this.logger.warn({
-        correlationId: request.id,
+        correlationId,
         errorCode: safeProblemCode(error),
         event: 'INTEGRATION_AUTH_REJECTED',
         sourceId: safeSourceId(headers.sourceId),
@@ -66,7 +68,7 @@ export class GoogleFormService {
     const parsed = googleFormInboundSubmissionSchema.safeParse(body);
     if (!parsed.success) {
       this.logger.warn({
-        correlationId: request.id,
+        correlationId,
         errorCode: 'GOOGLE_FORM_PAYLOAD_INVALID',
         event: 'INTEGRATION_PAYLOAD_REJECTED',
         sourceId: verified.sourceId,
@@ -94,13 +96,13 @@ export class GoogleFormService {
       const accepted = await this.repository.accept({
         acceptedKeyId: verified.acceptedKeyId,
         canonicalPayload,
-        correlationId: request.id,
+        correlationId,
         environment: this.environment,
         externalSubmissionId: verified.externalSubmissionId,
         requestHash,
       });
       this.logger.info({
-        correlationId: request.id,
+        correlationId,
         inboxId: accepted.inboxId,
         sourceId: verified.sourceId,
         status: accepted.status,

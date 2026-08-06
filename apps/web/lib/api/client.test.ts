@@ -3,12 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ApiClientValidationError,
   ApiProblem,
+  getActivity,
   getCategories,
   getPlaces,
   getRecommendations,
   normalizeApiBaseUrl,
   type RecommendationInput,
 } from './client';
+import { activityItemSchema } from './schemas';
 
 const originalBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -61,9 +63,123 @@ describe('public API client', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       'https://api.example.test/api/v1/public/categories',
       expect.objectContaining({
-        headers: { Accept: 'application/json, application/problem+json' },
+        credentials: 'omit',
+        headers: expect.objectContaining({
+          Accept: 'application/json, application/problem+json',
+          'X-Correlation-Id': expect.stringMatching(/^[A-Za-z0-9-]{36}$/),
+          'X-Request-Id': expect.stringMatching(/^[A-Za-z0-9-]{36}$/),
+        }),
       }),
     );
+    const headers = Reflect.get(fetchMock.mock.calls[0]?.[1] ?? {}, 'headers') as Record<
+      string,
+      string
+    >;
+    expect(headers['X-Correlation-Id']).toBe(headers['X-Request-Id']);
+  });
+
+  it('requests authenticated Activity with credentials, no-store, and compatible filters', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({
+        data: {
+          items: [],
+          pagination: { hasMore: false, nextCursor: null },
+        },
+        meta: {
+          generatedAt: '2026-08-01T00:00:00.000Z',
+          requestId: 'activity-request',
+        },
+        requestId: 'activity-request',
+        success: true,
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      getActivity({ limit: 1, status: 'APPLIED', type: 'REPORT' }),
+    ).resolves.toMatchObject({
+      data: { items: [] },
+      success: true,
+    });
+
+    const [url, options] = fetchMock.mock.calls[0] ?? [];
+    expect(url).toBe('https://api.example.test/api/v1/activity?limit=1&status=APPLIED&type=REPORT');
+    expect(options).toEqual(
+      expect.objectContaining({
+        cache: 'no-store',
+        credentials: 'include',
+      }),
+    );
+  });
+
+  it('accepts the API Activity contract for a nameless CONTRIBUTION DRAFT', async () => {
+    const responseBody = {
+      data: {
+        items: [
+          {
+            createdAt: '2026-07-31T19:37:21.290Z',
+            id: '01KYWTWRM9Q7YFN8R6F5AP6Z16',
+            placeId: null,
+            placeName: null,
+            status: 'DRAFT',
+            type: 'CONTRIBUTION',
+            updatedAt: '2026-07-31T19:37:21.290Z',
+          },
+        ],
+        pagination: { hasMore: false, nextCursor: null },
+      },
+      meta: {
+        generatedAt: '2026-07-31T19:37:21.322Z',
+        requestId: '492a69a5-ae1a-4c7b-8d3d-84e914abe9be',
+      },
+      requestId: '492a69a5-ae1a-4c7b-8d3d-84e914abe9be',
+      success: true,
+    } as const;
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(responseBody));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      getActivity({ limit: 20, status: 'DRAFT', type: 'CONTRIBUTION' }),
+    ).resolves.toEqual(responseBody);
+    expect(activityItemSchema.safeParse(responseBody.data.items[0])).toMatchObject({
+      success: true,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.example.test/api/v1/activity?limit=20&status=DRAFT&type=CONTRIBUTION',
+      expect.objectContaining({ cache: 'no-store', credentials: 'include' }),
+    );
+  });
+
+  it('turns a malformed Activity item into a safe client error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        Response.json({
+          data: {
+            items: [
+              {
+                createdAt: '2026-07-31T19:37:21.290Z',
+                id: '01KYWTWRM9Q7YFN8R6F5AP6Z16',
+                placeId: null,
+                placeName: 42,
+                status: 'DRAFT',
+                type: 'CONTRIBUTION',
+                updatedAt: '2026-07-31T19:37:21.290Z',
+              },
+            ],
+            pagination: { hasMore: false, nextCursor: null },
+          },
+          meta: { generatedAt: '2026-07-31T19:37:21.322Z', requestId: 'activity-invalid' },
+          requestId: 'activity-invalid',
+          success: true,
+        }),
+      ),
+    );
+
+    await expect(getActivity({ status: 'DRAFT', type: 'CONTRIBUTION' })).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+      status: 502,
+    });
   });
 
   function searchInput(

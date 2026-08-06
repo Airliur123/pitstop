@@ -9,6 +9,6 @@ export async function bootstrapWorker(): Promise<INestApplicationContext> {
     bufferLogs: true,
   });
   application.useLogger(application.get(Logger));
-  application.enableShutdownHooks();
+  application.enableShutdownHooks([], { useProcessExit: true });
   return application;
 }

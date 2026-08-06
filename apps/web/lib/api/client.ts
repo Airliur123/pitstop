@@ -113,6 +113,8 @@ function retryAfterSeconds(response: Response) {
 
 interface RequestOptions {
   readonly body?: unknown;
+  readonly cache?: RequestCache;
+  readonly credentials?: RequestCredentials;
   readonly idempotencyKey?: string;
   readonly method?: 'GET' | 'PATCH' | 'POST';
   readonly signal?: AbortSignal | undefined;
@@ -124,19 +126,23 @@ export async function request<T>(
   options: RequestOptions = {},
 ): Promise<T> {
   const cancellation = combinedSignal(options.signal);
+  const requestId = globalThis.crypto.randomUUID();
   try {
     const hasBody = options.body !== undefined;
     const response = await fetch(
       `${normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL)}${path}`,
       {
-        credentials: 'include',
+        credentials: options.credentials ?? 'include',
         headers: {
           Accept: 'application/json, application/problem+json',
           ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
           ...(options.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : {}),
+          'X-Correlation-Id': requestId,
+          'X-Request-Id': requestId,
         },
         method: options.method ?? 'GET',
         signal: cancellation.signal,
+        ...(options.cache ? { cache: options.cache } : {}),
         ...(hasBody ? { body: JSON.stringify(options.body) } : {}),
       },
     );
@@ -206,7 +212,7 @@ export function getCategories(signal?: AbortSignal) {
   return request<ApiSuccess<readonly PublicCategory[], CategoriesMeta>>(
     '/public/categories',
     categoriesResponseSchema,
-    { signal },
+    { credentials: 'omit', signal },
   );
 }
 
@@ -389,6 +395,6 @@ export function getActivity(input: ActivityInput = {}, signal?: AbortSignal) {
       type: input.type,
     })}`,
     activityResponseSchema,
-    { signal },
+    { cache: 'no-store', signal },
   );
 }

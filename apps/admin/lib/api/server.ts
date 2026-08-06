@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import type {
   AdminContributionDetail,
   AdminContributionQueue,
@@ -6,10 +8,11 @@ import type {
   AdminGoogleFormSubmissionList,
   AdminReportDetail,
   AdminReportQueue,
+  AdminSystemDiagnostics,
   AuditLogPage,
   AuthSession,
 } from '@pitstop/contracts';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import type { z } from 'zod';
 
 import { AdminApiProblem, normalizeApiBaseUrl } from './client';
@@ -19,6 +22,7 @@ import {
   adminDashboardResponseSchema,
   adminReportDetailResponseSchema,
   adminReportQueueResponseSchema,
+  adminSystemDiagnosticsResponseSchema,
   auditLogPageResponseSchema,
   authSessionResponseSchema,
   googleFormIntegrationStatusResponseSchema,
@@ -27,7 +31,12 @@ import {
 } from './schemas';
 
 async function serverRequest<T>(path: string, schema: z.ZodType<T>): Promise<T> {
-  const cookieStore = await cookies();
+  const [cookieStore, incomingHeaders] = await Promise.all([cookies(), headers()]);
+  const requestId = safeTransportIdentifier(incomingHeaders.get('x-request-id')) ?? randomUUID();
+  const correlationId =
+    safeCorrelationIdentifier(incomingHeaders.get('x-correlation-id')) ??
+    safeCorrelationIdentifier(requestId) ??
+    randomUUID();
   const response = await fetch(
     `${normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL)}${path}`,
     {
@@ -35,6 +44,8 @@ async function serverRequest<T>(path: string, schema: z.ZodType<T>): Promise<T> 
       headers: {
         Accept: 'application/json, application/problem+json',
         Cookie: cookieStore.toString(),
+        'X-Correlation-Id': correlationId,
+        'X-Request-Id': requestId,
       },
     },
   );
@@ -71,6 +82,14 @@ async function serverRequest<T>(path: string, schema: z.ZodType<T>): Promise<T> 
   return parsed.data;
 }
 
+function safeTransportIdentifier(value: string | null): string | null {
+  return value !== null && /^[A-Za-z0-9](?:[A-Za-z0-9._:-]{0,127})$/.test(value) ? value : null;
+}
+
+function safeCorrelationIdentifier(value: string | null): string | null {
+  return value !== null && /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,63})$/.test(value) ? value : null;
+}
+
 export async function getAuthSession(): Promise<AuthSession> {
   const response = await serverRequest('/auth/session', authSessionResponseSchema);
   return response.data;
@@ -78,6 +97,11 @@ export async function getAuthSession(): Promise<AuthSession> {
 
 export async function getAdminDashboard(): Promise<AdminDashboard> {
   const response = await serverRequest('/admin/dashboard', adminDashboardResponseSchema);
+  return response.data;
+}
+
+export async function getAdminSystemDiagnostics(): Promise<AdminSystemDiagnostics> {
+  const response = await serverRequest('/admin/diagnostics', adminSystemDiagnosticsResponseSchema);
   return response.data;
 }
 

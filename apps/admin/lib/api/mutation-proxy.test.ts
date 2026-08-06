@@ -110,6 +110,7 @@ describe('admin same-origin mutation proxy', () => {
       );
       expect(response.status).toBe(200);
       expect(response.headers.get('cache-control')).toBe('no-store, private');
+      expect(response.headers.get('x-correlation-id')).toBe('correlation-phase-8');
       expect(response.headers.get('x-request-id')).toBe('upstream');
     }
 
@@ -174,6 +175,65 @@ describe('admin same-origin mutation proxy', () => {
       status: 403,
     });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects unsupported content types and oversized bodies before upstream fetch', async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal('fetch', fetchMock);
+    const textRequest = adminRequest(
+      `/api/admin/contributions/${contributionId}/claim`,
+      { expectedVersion: 1 },
+      { 'Content-Type': 'text/plain' },
+    );
+
+    await expect(
+      proxyAdminMutation(textRequest, moderationTarget('claim')).then(async (response) => ({
+        body: await response.json(),
+        status: response.status,
+      })),
+    ).resolves.toMatchObject({
+      body: { code: 'CONTENT_TYPE_UNSUPPORTED' },
+      status: 415,
+    });
+
+    const oversizedRequest = adminRequest(`/api/admin/contributions/${contributionId}/claim`, {
+      evidence: 'x'.repeat(256 * 1_024),
+    });
+    await expect(
+      proxyAdminMutation(oversizedRequest, moderationTarget('claim')).then(async (response) => ({
+        body: await response.json(),
+        status: response.status,
+      })),
+    ).resolves.toMatchObject({
+      body: { code: 'REQUEST_BODY_TOO_LARGE' },
+      status: 413,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('replaces invalid transport identifiers before forwarding or returning them', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
+      const headers = new Headers(init?.headers);
+      expect(headers.get('x-request-id')).toMatch(/^[0-9a-f-]{36}$/);
+      expect(headers.get('x-correlation-id')).toMatch(/^[0-9a-f-]{36}$/);
+      return Response.json({ success: true });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await proxyAdminMutation(
+      adminRequest(
+        `/api/admin/contributions/${contributionId}/claim`,
+        { expectedVersion: 1 },
+        {
+          'X-Correlation-Id': `${'a'.repeat(64)}!`,
+          'X-Request-Id': `${'b'.repeat(128)}!`,
+        },
+      ),
+      moderationTarget('claim'),
+    );
+
+    expect(response.headers.get('x-request-id')).toMatch(/^[0-9a-f-]{36}$/);
+    expect(response.headers.get('x-correlation-id')).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it('returns the logout Set-Cookie on the admin origin so the host-only session is deleted', async () => {

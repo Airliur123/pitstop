@@ -7,15 +7,32 @@ import { ConfiguredGeocodingAdapter } from './geocoding.adapters';
 import { GEOCODING_PORT } from './geocoding.port';
 import { IntegrationJobService } from './integration-job.service';
 import { IntegrationWorkerRepository } from './integration-worker.repository';
-import {
-  createWorkerDatabasePool,
-  WORKER_DATABASE_POOL,
-  WorkerDatabaseLifecycle,
-} from './worker-database';
+import { createWorkerDatabasePool, WORKER_DATABASE_POOL } from './worker-database';
 import { WorkerLifecycleService } from './worker-lifecycle.service';
+import { readWorkerRuntimeSettings, workerLogRedactPaths } from './worker-observability';
 
 @Module({
-  imports: [LoggerModule.forRoot({ pinoHttp: { level: process.env.LOG_LEVEL ?? 'info' } })],
+  imports: [
+    LoggerModule.forRootAsync({
+      useFactory: () => {
+        const runtimeSettings = readWorkerRuntimeSettings();
+        return {
+          pinoHttp: {
+            base: {
+              environment: runtimeSettings.environment,
+              release: runtimeSettings.release,
+              service: runtimeSettings.service,
+            },
+            level: runtimeSettings.logLevel,
+            redact: {
+              censor: '[REDACTED]',
+              paths: [...workerLogRedactPaths],
+            },
+          },
+        };
+      },
+    }),
+  ],
   providers: [
     {
       provide: WORKER_ENVIRONMENT,
@@ -32,7 +49,6 @@ import { WorkerLifecycleService } from './worker-lifecycle.service';
     },
     IntegrationWorkerRepository,
     IntegrationJobService,
-    WorkerDatabaseLifecycle,
     WorkerLifecycleService,
   ],
 })

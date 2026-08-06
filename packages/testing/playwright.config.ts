@@ -1,5 +1,13 @@
 import { defineConfig } from '@playwright/test';
 
+const nativeTemporaryDirectoryEnvironment =
+  process.platform === 'linux' &&
+  [process.env.TMPDIR, process.env.TMP, process.env.TEMP].some((value) =>
+    value?.startsWith('/mnt/'),
+  )
+    ? { TEMP: '/tmp', TMP: '/tmp', TMPDIR: '/tmp' }
+    : {};
+
 export default defineConfig({
   expect: { timeout: 15_000 },
   testDir: '../../tests/e2e',
@@ -9,8 +17,10 @@ export default defineConfig({
   workers: 1,
   webServer: [
     {
-      command: 'pnpm --filter @pitstop/api start',
+      command: 'node --import tsx src/main.ts',
+      cwd: '../../apps/api',
       env: {
+        ...nativeTemporaryDirectoryEnvironment,
         API_PORT: '3102',
         AUTH_COOKIE_SECURE: 'false',
         AUTH_REQUEST_EMAIL_MAX: '20',
@@ -39,13 +49,15 @@ export default defineConfig({
         GOOGLE_FORM_SOURCE_ENABLED: 'true',
         GOOGLE_FORM_SOURCE_ID: 'google-form-main',
       },
+      gracefulShutdown: { signal: 'SIGTERM', timeout: 35_000 },
       reuseExistingServer: false,
       timeout: 120_000,
       url: 'http://localhost:3102/health/live',
     },
     {
-      command: 'pnpm --filter @pitstop/web exec next dev --port 3100',
+      command: 'pnpm --filter @pitstop/web exec next dev --webpack --port 3100',
       env: {
+        ...nativeTemporaryDirectoryEnvironment,
         NEXT_PUBLIC_API_BASE_URL: 'http://localhost:3102/api/v1',
         NEXT_PUBLIC_ENABLE_UI_CATALOG: 'true',
         NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_ENABLED: 'false',
@@ -53,7 +65,11 @@ export default defineConfig({
         NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_LATITUDE: '-6.138',
         NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_LONGITUDE: '106.703',
         NEXT_PUBLIC_MAP_TILES_DISABLED: 'true',
+        NEXT_PUBLIC_PWA_ENABLED: 'true',
+        NEXT_PUBLIC_PWA_TEST_MODE: 'true',
         PITSTOP_E2E: 'true',
+        PWA_TEST_MODE: 'true',
+        WEB_BASE_URL: 'http://localhost:3100',
       },
       reuseExistingServer: false,
       timeout: 120_000,
@@ -62,6 +78,7 @@ export default defineConfig({
     {
       command: 'pnpm --filter @pitstop/admin exec next dev --port 3101',
       env: {
+        ...nativeTemporaryDirectoryEnvironment,
         ADMIN_BASE_URL: 'http://localhost:3101',
         NEXT_PUBLIC_API_BASE_URL: 'http://localhost:3102/api/v1',
         NEXT_PUBLIC_ENABLE_UI_CATALOG: 'true',
@@ -71,22 +88,28 @@ export default defineConfig({
       timeout: 120_000,
       url: 'http://localhost:3101',
     },
-    {
-      command: 'pnpm --filter @pitstop/worker start',
-      env: {
-        DUPLICATE_RADIUS_METERS: '250',
-        GEOCODING_CONFIDENCE_THRESHOLD: '0.7',
-        GEOCODING_HTTP_TIMEOUT_MS: '30000',
-        GEOCODING_PROVIDER: 'deterministic',
-        WORKER_RECONCILE_INTERVAL_MS: '1000',
-      },
-      gracefulShutdown: { signal: 'SIGTERM', timeout: 10_000 },
-      name: 'integration-worker',
-      reuseExistingServer: false,
-      stdout: 'pipe',
-      timeout: 120_000,
-      wait: { stdout: /"status":"READY"/ },
-    },
+    ...(process.env.PITSTOP_PWA_ONLY === 'true'
+      ? []
+      : [
+          {
+            command: 'node --import tsx src/main.ts',
+            cwd: '../../apps/worker',
+            env: {
+              ...nativeTemporaryDirectoryEnvironment,
+              DUPLICATE_RADIUS_METERS: '250',
+              GEOCODING_CONFIDENCE_THRESHOLD: '0.7',
+              GEOCODING_HTTP_TIMEOUT_MS: '30000',
+              GEOCODING_PROVIDER: 'deterministic',
+              WORKER_RECONCILE_INTERVAL_MS: '1000',
+            },
+            gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 35_000 },
+            name: 'integration-worker',
+            reuseExistingServer: false,
+            stdout: 'pipe' as const,
+            timeout: 120_000,
+            wait: { stdout: /"status":"READY"/ },
+          },
+        ]),
   ],
   use: {
     baseURL: 'http://localhost:3100',
@@ -94,39 +117,49 @@ export default defineConfig({
   },
   projects: [
     {
-      grepInvert: /@guest-core|@auth-core|@contribution-core|@admin-core/,
+      grepInvert: /@guest-core|@auth-core|@contribution-core|@admin-core|@pwa-core/,
       name: 'mobile-320',
       use: { viewport: { height: 568, width: 320 } },
     },
     {
-      grepInvert: /@guest-core|@auth-core|@contribution-core|@admin-core/,
+      grepInvert: /@guest-core|@auth-core|@contribution-core|@admin-core|@pwa-core/,
       name: 'mobile-360',
       use: { viewport: { height: 800, width: 360 } },
     },
     {
-      grepInvert: /@admin-core/,
+      grepInvert: /@admin-core|@pwa-core/,
       name: 'mobile-390',
       use: { viewport: { height: 844, width: 390 } },
     },
     {
-      grepInvert: /@guest-core|@auth-core|@contribution-core|@admin-core/,
+      grepInvert: /@guest-core|@auth-core|@contribution-core|@admin-core|@pwa-core/,
       name: 'mobile-430',
       use: { viewport: { height: 932, width: 430 } },
     },
     {
-      grepInvert: /@guest-core|@auth-core|@contribution-core|@admin-core/,
+      grepInvert: /@guest-core|@auth-core|@contribution-core|@admin-core|@pwa-core/,
       name: 'tablet-768',
       use: { viewport: { height: 1024, width: 768 } },
     },
     {
-      grepInvert: /@guest-core|@auth-core|@contribution-core|@admin-core/,
+      grepInvert: /@guest-core|@auth-core|@contribution-core|@admin-core|@pwa-core/,
       name: 'desktop-1280',
       use: { viewport: { height: 800, width: 1280 } },
     },
     {
       grep: /@admin-core/,
+      grepInvert: /@pwa-core/,
       name: 'admin-desktop-1280',
       use: { viewport: { height: 800, width: 1280 } },
+    },
+    {
+      grep: /@pwa-core/,
+      name: 'pwa-chromium',
+      use: {
+        browserName: 'chromium',
+        serviceWorkers: 'allow',
+        viewport: { height: 844, width: 390 },
+      },
     },
   ],
 });

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">PitStop</title>
+  <rect width="512" height="512" rx="107" fill="#166534"/>
+  <path d="M131 120h144c72 0 115 37 115 99 0 64-45 104-120 104h-59v77h-80V120Zm80 67v69h53c29 0 45-13 45-35 0-23-16-34-45-34h-53Z" fill="#fff"/>
+  <circle cx="365" cy="365" r="43" fill="#f97316"/>
+</svg>

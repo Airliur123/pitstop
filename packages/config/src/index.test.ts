@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildFastifyTrustProxy,
   parseAdminEnvironment,
   parseApiEnvironment,
+  parseCorsOrigins,
+  parseTrustedProxyCidrs,
   parseWebEnvironment,
   parseWorkerEnvironment,
+  resolveTrustedProxyConfiguration,
 } from './index';
 
 const validEnvironment: NodeJS.ProcessEnv = {
@@ -27,6 +31,22 @@ const validEnvironment: NodeJS.ProcessEnv = {
   API_SWAGGER_ENABLED: 'true',
 };
 
+const validProductionApiEnvironment: NodeJS.ProcessEnv = {
+  ...validEnvironment,
+  ADMIN_BASE_URL: 'https://admin.pitstop.example',
+  API_BASE_URL: 'https://api.pitstop.example',
+  API_SWAGGER_ENABLED: 'false',
+  AUTH_COOKIE_SECURE: 'true',
+  AUTH_SESSION_SECRET: 'production-session-secret-0123456789',
+  AUTH_TOKEN_SECRET: 'production-auth-token-secret-0123456789',
+  CORS_ALLOWED_ORIGINS: 'https://pitstop.example,https://admin.pitstop.example',
+  LOG_LEVEL: 'info',
+  MAIL_HOST: 'smtp.example',
+  NODE_ENV: 'production',
+  PUBLIC_CURSOR_SIGNING_SECRET: 'production-cursor-signing-secret-0123456789',
+  WEB_BASE_URL: 'https://pitstop.example',
+};
+
 describe('API environment parser', () => {
   it('accepts and coerces a complete valid environment', () => {
     const parsed = parseApiEnvironment(validEnvironment);
@@ -37,6 +57,11 @@ describe('API environment parser', () => {
     expect(parsed.CACHE_CATEGORIES_TTL_SECONDS).toBe(300);
     expect(parsed.AUTH_MAGIC_LINK_TTL_SECONDS).toBe(900);
     expect(parsed.AUTH_SESSION_TTL_SECONDS).toBe(2_592_000);
+    expect(parsed.HEALTH_DEPENDENCY_TIMEOUT_MS).toBe(1_000);
+    expect(parsed.METRICS_ENABLED).toBe(false);
+    expect(parsed.RELEASE_VERSION).toBe('development');
+    expect(parsed.TRUST_PROXY_CIDRS).toEqual([]);
+    expect(parsed.WORKER_HEARTBEAT_TTL_SECONDS).toBe(30);
   });
 
   it('rejects invalid ports and missing secrets with clear paths', () => {
@@ -64,20 +89,9 @@ describe('API environment parser', () => {
         PUBLIC_CURSOR_SIGNING_SECRET: 'too-short',
       }),
     ).toThrow(/PUBLIC_CURSOR_SIGNING_SECRET/);
-    expect(
-      parseApiEnvironment({
-        ...validEnvironment,
-        NODE_ENV: 'production',
-        LOG_LEVEL: 'info',
-        PUBLIC_CURSOR_SIGNING_SECRET: 'production-cursor-signing-secret-0123456789',
-        AUTH_TOKEN_SECRET: 'production-auth-token-secret-0123456789',
-        AUTH_SESSION_SECRET: 'production-session-secret-0123456789',
-        AUTH_COOKIE_SECURE: 'true',
-        WEB_BASE_URL: 'https://pitstop.example',
-        ADMIN_BASE_URL: 'https://admin.pitstop.example',
-        MAIL_HOST: 'smtp.example',
-      }).PUBLIC_CURSOR_SIGNING_SECRET,
-    ).toBe('production-cursor-signing-secret-0123456789');
+    expect(parseApiEnvironment(validProductionApiEnvironment).PUBLIC_CURSOR_SIGNING_SECRET).toBe(
+      'production-cursor-signing-secret-0123456789',
+    );
   });
 
   it('fails closed for unsafe production authentication configuration', () => {
@@ -102,6 +116,89 @@ describe('API environment parser', () => {
         MAIL_HOST: 'smtp.example',
       }),
     ).toThrow(/AUTH_COOKIE_SECURE/);
+  });
+
+  it('requires strict canonical production URLs and matching exact CORS origins', () => {
+    expect(() =>
+      parseApiEnvironment({
+        ...validProductionApiEnvironment,
+        API_BASE_URL: 'http://api.pitstop.example',
+      }),
+    ).toThrow(/Production API base URL must use HTTPS/);
+    expect(() =>
+      parseApiEnvironment({
+        ...validProductionApiEnvironment,
+        WEB_BASE_URL: 'https://driver:secret@pitstop.example',
+      }),
+    ).toThrow(/credentials/);
+    expect(() =>
+      parseApiEnvironment({
+        ...validProductionApiEnvironment,
+        CORS_ALLOWED_ORIGINS: 'https://pitstop.example/path,https://admin.pitstop.example',
+      }),
+    ).toThrow(/exact origin/);
+    expect(() =>
+      parseApiEnvironment({
+        ...validProductionApiEnvironment,
+        CORS_ALLOWED_ORIGINS: 'https://pitstop.example',
+      }),
+    ).toThrow(/ADMIN_BASE_URL/);
+    expect(() =>
+      parseApiEnvironment({
+        ...validProductionApiEnvironment,
+        API_SWAGGER_ENABLED: 'true',
+      }),
+    ).toThrow(/API_SWAGGER_ENABLED/);
+  });
+
+  it('uses an explicit trusted proxy CIDR list and rejects an unbounded boolean', () => {
+    expect(() =>
+      parseApiEnvironment({
+        ...validEnvironment,
+        TRUST_PROXY: 'true',
+      }),
+    ).toThrow(/TRUST_PROXY_CIDRS/);
+
+    const parsed = parseApiEnvironment({
+      ...validEnvironment,
+      TRUST_PROXY: 'true',
+      TRUST_PROXY_CIDRS: '10.20.0.0/16,2001:db8::/32,192.0.2.10',
+    });
+    expect(resolveTrustedProxyConfiguration(parsed)).toEqual([
+      '10.20.0.0/16',
+      '2001:db8::/32',
+      '192.0.2.10',
+    ]);
+    expect(resolveTrustedProxyConfiguration(parseApiEnvironment(validEnvironment))).toBe(false);
+    expect(() => parseTrustedProxyCidrs('10.0.0.0/99')).toThrow(/Invalid trusted proxy/);
+  });
+
+  it('leaves spoofed forwarded chains entirely to Fastify when trust is disabled', () => {
+    const spoofedForwardedFor = '203.0.113.50, 10.20.30.40';
+    const parsed = parseApiEnvironment({
+      ...validEnvironment,
+      TRUST_PROXY: 'false',
+      TRUST_PROXY_CIDRS: '10.20.0.0/16',
+    });
+
+    expect(spoofedForwardedFor).toContain('203.0.113.50');
+    expect(buildFastifyTrustProxy(parsed)).toBe(false);
+  });
+
+  it('validates bounded observability configuration with metrics disabled by default', () => {
+    const parsed = parseApiEnvironment({
+      ...validEnvironment,
+      GRACEFUL_SHUTDOWN_TIMEOUT_MS: '45000',
+      HEALTH_DEPENDENCY_TIMEOUT_MS: '750',
+      METRICS_ENABLED: 'true',
+      RELEASE_VERSION: 'phase-11.abc123',
+    });
+
+    expect(parsed.GRACEFUL_SHUTDOWN_TIMEOUT_MS).toBe(45_000);
+    expect(parsed.HEALTH_DEPENDENCY_TIMEOUT_MS).toBe(750);
+    expect(parsed.METRICS_ENABLED).toBe(true);
+    expect(parsed.RELEASE_VERSION).toBe('phase-11.abc123');
+    expect(parseApiEnvironment(validEnvironment).METRICS_ENABLED).toBe(false);
   });
 
   it('requires integration key material only when the Google Form source is enabled', () => {
@@ -150,6 +247,8 @@ describe('worker environment parser', () => {
     expect(parsed.GEOCODING_PROVIDER).toBe('deterministic');
     expect(parsed.WORKER_RECONCILE_INTERVAL_MS).toBe(5000);
     expect(parsed.WORKER_STAGE_LEASE_SECONDS).toBe(300);
+    expect(parsed.WORKER_HEARTBEAT_INTERVAL_MS).toBe(10_000);
+    expect(parsed.WORKER_HEARTBEAT_TTL_SECONDS).toBe(30);
   });
 
   it('rejects deterministic geocoding in production', () => {
@@ -163,6 +262,19 @@ describe('worker environment parser', () => {
       }),
     ).toThrow(/GEOCODING_PROVIDER/);
   });
+
+  it('requires a heartbeat TTL that tolerates two missed intervals', () => {
+    expect(() =>
+      parseWorkerEnvironment({
+        DATABASE_URL: validEnvironment.DATABASE_URL,
+        LOG_LEVEL: 'silent',
+        NODE_ENV: 'test',
+        REDIS_URL: validEnvironment.REDIS_URL,
+        WORKER_HEARTBEAT_INTERVAL_MS: '10000',
+        WORKER_HEARTBEAT_TTL_SECONDS: '10',
+      }),
+    ).toThrow(/WORKER_HEARTBEAT_TTL_SECONDS/);
+  });
 });
 
 describe('web environment parser', () => {
@@ -174,9 +286,17 @@ describe('web environment parser', () => {
   };
 
   it('keeps the location preview disabled by default', () => {
-    expect(parseWebEnvironment(webEnvironment).NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_ENABLED).toBe(
-      false,
-    );
+    const parsed = parseWebEnvironment(webEnvironment);
+    expect(parsed.NEXT_PUBLIC_GUEST_LOCATION_PREVIEW_ENABLED).toBe(false);
+    expect(parsed.NEXT_PUBLIC_PWA_ENABLED).toBe(false);
+    expect(parsed.NEXT_PUBLIC_PWA_TEST_MODE).toBe(false);
+    expect(parsed.NEXT_PUBLIC_CLIENT_OBSERVABILITY_ENABLED).toBe(false);
+    expect(parsed.NEXT_PUBLIC_CLIENT_OBSERVABILITY_ENDPOINT).toBe('/api/observability/client');
+    expect(parseCorsOrigins(parsed.NEXT_PUBLIC_MAP_TILE_ORIGINS)).toEqual([
+      'https://a.tile.openstreetmap.org',
+      'https://b.tile.openstreetmap.org',
+      'https://c.tile.openstreetmap.org',
+    ]);
   });
 
   it('requires a complete preview fixture when enabled', () => {
@@ -202,6 +322,46 @@ describe('web environment parser', () => {
     expect(() => parseWebEnvironment({ ...webEnvironment, NODE_ENV: 'production' })).toThrow(
       /Production API base URL cannot use localhost/,
     );
+  });
+
+  it('enables development service workers only through controlled PWA test mode', () => {
+    expect(() =>
+      parseWebEnvironment({
+        ...webEnvironment,
+        NEXT_PUBLIC_PWA_ENABLED: 'true',
+      }),
+    ).toThrow(/PWA test mode/);
+
+    expect(
+      parseWebEnvironment({
+        ...webEnvironment,
+        NEXT_PUBLIC_PWA_ENABLED: 'true',
+        NEXT_PUBLIC_PWA_TEST_MODE: 'true',
+      }).NEXT_PUBLIC_PWA_ENABLED,
+    ).toBe(true);
+  });
+
+  it('accepts strict production web, API, map, and local telemetry configuration', () => {
+    const parsed = parseWebEnvironment({
+      NEXT_PUBLIC_API_BASE_URL: 'https://api.pitstop.example/api/v1',
+      NEXT_PUBLIC_CLIENT_OBSERVABILITY_ENABLED: 'true',
+      NEXT_PUBLIC_CLIENT_OBSERVABILITY_ENDPOINT: '/api/observability/client',
+      NEXT_PUBLIC_MAP_TILE_ORIGINS:
+        'https://a.tile.openstreetmap.org,https://b.tile.openstreetmap.org',
+      NEXT_PUBLIC_PWA_ENABLED: 'true',
+      NODE_ENV: 'production',
+      WEB_BASE_URL: 'https://pitstop.example',
+      WEB_PORT: '3000',
+    });
+
+    expect(parsed.NEXT_PUBLIC_CLIENT_OBSERVABILITY_ENABLED).toBe(true);
+    expect(parsed.NEXT_PUBLIC_PWA_ENABLED).toBe(true);
+    expect(() =>
+      parseWebEnvironment({
+        ...webEnvironment,
+        NEXT_PUBLIC_CLIENT_OBSERVABILITY_ENDPOINT: 'https://telemetry.example/collect',
+      }),
+    ).toThrow(/same-origin path/);
   });
 });
 

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/main.ts",
-    "start": "tsx src/main.ts",
+    "start": "node --import tsx src/main.ts",
     "build": "tsc --noEmit",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -16,7 +16,6 @@
   "dependencies": {
     "@fastify/cors": "11.3.0",
     "@fastify/helmet": "13.1.0",
-    "@fastify/static": "9.3.0",
     "@nestjs/common": "11.1.28",
     "@nestjs/core": "11.1.28",
     "@nestjs/platform-fastify": "11.1.28",

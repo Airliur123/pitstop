@@ -368,7 +368,7 @@ const contributionActivity = z.object({
   createdAt: dateTime,
   id: z.string().min(1),
   placeId: z.string().nullable(),
-  placeName: z.string(),
+  placeName: z.string().nullable(),
   status: contributionStatusSchema,
   type: z.literal('CONTRIBUTION'),
   updatedAt: dateTime,
@@ -393,13 +393,13 @@ const confirmationActivity = z.object({
   type: z.literal('CONFIRMATION'),
   updatedAt: dateTime,
 });
-const activityItem = z.discriminatedUnion('type', [
+export const activityItemSchema = z.discriminatedUnion('type', [
   contributionActivity,
   reportActivity,
   confirmationActivity,
 ]) satisfies z.ZodType<ActivityItem>;
 const userActivity = z.object({
-  items: z.array(activityItem),
+  items: z.array(activityItemSchema),
   pagination: z.object({
     hasMore: z.boolean(),
     nextCursor: z.string().nullable(),

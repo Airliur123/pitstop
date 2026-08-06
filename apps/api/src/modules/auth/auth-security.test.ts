@@ -35,10 +35,35 @@ describe('auth security primitives', () => {
     expect(cookie).toContain('SameSite=Lax');
     expect(cookie).toContain('Secure');
     expect(cookie).toContain('Max-Age=3600');
+    expect(cookie).toContain('Path=/');
+    expect(cookie).toContain('Expires=Thu, 01 Jan 2026 01:00:00 GMT');
+    expect(cookie).not.toContain('Domain=');
     expect(buildClearSessionCookie(true)).toContain('Max-Age=0');
+    expect(buildClearSessionCookie(true)).not.toContain('Domain=');
     expect(readCookie(`other=1; ${AUTH_SESSION_COOKIE}=opaque`, AUTH_SESSION_COOKIE)).toBe(
       'opaque',
     );
+  });
+
+  it('keeps local HTTP compatible without weakening the production cookie', () => {
+    const localCookie = buildSessionCookie(
+      'local-session',
+      60,
+      false,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+    const productionCookie = buildSessionCookie(
+      'production-session',
+      60,
+      true,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(localCookie).not.toContain('Secure');
+    expect(productionCookie).toContain('Secure');
+    expect(productionCookie).not.toContain('Domain=');
+    expect(localCookie).toContain('HttpOnly');
+    expect(localCookie).toContain('SameSite=Lax');
   });
 
   it('masks identity data and declares every authentication log surface for redaction', () => {

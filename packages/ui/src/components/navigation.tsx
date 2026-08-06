@@ -12,6 +12,7 @@ import {
   Menu,
   RefreshCw,
   ScrollText,
+  ServerCog,
   ShieldCheck,
   UserRound,
 } from 'lucide-react';
@@ -91,7 +92,7 @@ export function MobileBottomNavigation({
 }
 
 export type AdminNavigationValue =
-  'audit' | 'dashboard' | 'integrations' | 'moderation' | 'places' | 'reports';
+  'audit' | 'dashboard' | 'integrations' | 'moderation' | 'places' | 'reports' | 'system';
 
 const adminItems = [
   { href: '/', icon: LayoutDashboard, label: 'Dashboard', value: 'dashboard' },
@@ -104,6 +105,7 @@ const adminItems = [
     label: 'Sinkronisasi Form',
     value: 'integrations',
   },
+  { href: '/system', icon: ServerCog, label: 'Sistem', value: 'system' },
 ] as const;
 
 export function AdminSidebar({

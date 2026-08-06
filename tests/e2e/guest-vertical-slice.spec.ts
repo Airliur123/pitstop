@@ -136,7 +136,9 @@ test('@guest-core guest budget survives reload and a network failure remains rec
   );
   await page.getByRole('button', { name: 'Tutup lembar' }).click();
 
-  await page.route('**/api/v1/public/categories', (route) => route.abort('internetdisconnected'));
+  await page.route('**/api/v1/public/recommendations**', (route) =>
+    route.abort('internetdisconnected'),
+  );
   await page.reload();
   await activateKalideres(page);
   await expect(

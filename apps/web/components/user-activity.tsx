@@ -216,12 +216,7 @@ export function UserActivityView() {
 }
 
 function ActivityCard({ item }: Readonly<{ item: ActivityItem }>) {
-  const href =
-    item.type === 'CONTRIBUTION'
-      ? `/contributions/${item.id}`
-      : item.type === 'REPORT'
-        ? `/reports/${item.id}`
-        : null;
+  const view = mapActivityItem(item);
   return (
     <li>
       <Card className="grid gap-2 shadow-none">
@@ -234,7 +229,7 @@ function ActivityCard({ item }: Readonly<{ item: ActivityItem }>) {
                   ? 'Laporan perubahan'
                   : 'Konfirmasi komunitas'}
             </p>
-            <h2 className="break-words text-base font-semibold">{item.placeName}</h2>
+            <h2 className="break-words text-base font-semibold">{view.placeName}</h2>
           </div>
           <StatusBadge status={activityBadge(item.status)} />
         </div>
@@ -243,8 +238,8 @@ function ActivityCard({ item }: Readonly<{ item: ActivityItem }>) {
           {item.type === 'REPORT' ? ` · ${item.reportType.replaceAll('_', ' ')}` : ''}
           {item.type === 'CONFIRMATION' ? ` · ${item.confirmationType.replaceAll('_', ' ')}` : ''}
         </p>
-        {href ? (
-          <LinkButton href={href} size="full" variant="secondary">
+        {view.href ? (
+          <LinkButton href={view.href} size="full" variant="secondary">
             Lihat detail
           </LinkButton>
         ) : (
@@ -255,6 +250,18 @@ function ActivityCard({ item }: Readonly<{ item: ActivityItem }>) {
       </Card>
     </li>
   );
+}
+
+export function mapActivityItem(item: ActivityItem) {
+  return {
+    href:
+      item.type === 'CONTRIBUTION'
+        ? `/contributions/${item.id}`
+        : item.type === 'REPORT'
+          ? `/reports/${item.id}`
+          : null,
+    placeName: item.placeName ?? 'Kontribusi belum diberi nama',
+  };
 }
 
 function statusOptions(type: ActivityType | ''): readonly string[] {

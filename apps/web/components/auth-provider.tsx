@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, type ReactNode, useContext } from 'react';
 
 import { getAuthSession, logout as requestLogout } from '../lib/api/client';
+import { purgePrivateBrowserCaches } from '../lib/pwa/client-cache';
 import { queryKeys } from '../lib/query-keys';
 
 export type AuthStatus = 'authenticated' | 'error' | 'loading' | 'unauthenticated';
@@ -31,9 +32,10 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   });
   const logoutMutation = useMutation({
     mutationFn: () => requestLogout(),
-    onSuccess: (response) => {
+    onSuccess: async (response) => {
       queryClient.removeQueries({ queryKey: queryKeys.privateData() });
       queryClient.setQueryData(queryKeys.authSession(), response);
+      await purgePrivateBrowserCaches();
     },
   });
   const session = sessionQuery.data?.data;

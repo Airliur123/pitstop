@@ -49,6 +49,49 @@ export const authSessionResponseSchema = successSchema(
   ]),
 );
 
+export const adminSystemDiagnosticsResponseSchema = successSchema(
+  z
+    .object({
+      backlog: z
+        .object({
+          contributionsPending: z.number().int().nonnegative(),
+          googleFormDlq: z.number().int().nonnegative(),
+          googleFormInbox: z.number().int().nonnegative(),
+          reportsPendingOrInReview: z.number().int().nonnegative(),
+        })
+        .strict(),
+      dependencies: z
+        .object({
+          database: z.enum(['down', 'up']),
+          queue: z.enum(['down', 'up']),
+          redis: z.enum(['down', 'up']),
+        })
+        .strict(),
+      environment: z.string(),
+      generatedAt: z.string(),
+      queues: z
+        .object({
+          active: z.number().int().nonnegative(),
+          delayed: z.number().int().nonnegative(),
+          dlq: z.number().int().nonnegative(),
+          failed: z.number().int().nonnegative(),
+          waiting: z.number().int().nonnegative(),
+        })
+        .strict(),
+      release: z.string(),
+      service: z.literal('pitstop-api'),
+      status: z.enum(['not_ready', 'ready']),
+      worker: z
+        .object({
+          lastHeartbeatAt: z.string().nullable(),
+          lastSuccessfulActivityAt: z.string().nullable(),
+          state: z.enum(['ready', 'stale', 'stopping', 'unavailable']),
+        })
+        .strict(),
+    })
+    .strict(),
+);
+
 export const magicLinkRequestResponseSchema = successSchema(
   z.object({ accepted: z.literal(true) }).strict(),
 );

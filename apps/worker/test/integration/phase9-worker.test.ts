@@ -11,12 +11,19 @@ import {
 import { Queue, Worker } from 'bullmq';
 import Redis from 'ioredis';
 import { GenericContainer, type StartedTestContainer, Wait } from 'testcontainers';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { ConfiguredGeocodingAdapter } from '../../src/geocoding.adapters';
 import { IntegrationJobService } from '../../src/integration-job.service';
 import { IntegrationWorkerRepository } from '../../src/integration-worker.repository';
 import { classifyWorkerError, integrationJobPolicy } from '../../src/job-policy';
+import { WorkerLifecycleService } from '../../src/worker-lifecycle.service';
+import {
+  WORKER_HEARTBEAT_KEY,
+  WORKER_METRICS_KEY,
+  type WorkerHeartbeat,
+  type WorkerMetricsSnapshot,
+} from '../../src/worker-observability';
 
 interface CountRow extends RowDataPacket {
   readonly count: number;
@@ -254,11 +261,14 @@ describe.sequential('Phase 9 worker integration', () => {
       [inboxId],
     );
     const competingClaims = await Promise.all([
-      repository.claimGeocodingCandidates(300),
-      repository.claimGeocodingCandidates(300),
+      repository.claimGeocodingCandidatesWithStats(300),
+      repository.claimGeocodingCandidatesWithStats(300),
     ]);
-    const reclaimed = competingClaims.flat().filter((job) => job.inboxId === inboxId);
+    const reclaimed = competingClaims
+      .flatMap((batch) => batch.jobs)
+      .filter((job) => job.inboxId === inboxId);
     expect(reclaimed).toHaveLength(1);
+    expect(competingClaims.reduce((total, batch) => total + batch.staleRecovered, 0)).toBe(1);
     expect(reclaimed[0]).toMatchObject({
       contributionId: geocodeJob?.contributionId,
       inboxId,
@@ -306,11 +316,14 @@ describe.sequential('Phase 9 worker integration', () => {
     );
 
     const competingClaims = await Promise.all([
-      repository.claimDuplicateCandidates(300),
-      repository.claimDuplicateCandidates(300),
+      repository.claimDuplicateCandidatesWithStats(300),
+      repository.claimDuplicateCandidatesWithStats(300),
     ]);
-    const reclaimed = competingClaims.flat().filter((job) => job.inboxId === inboxId);
+    const reclaimed = competingClaims
+      .flatMap((batch) => batch.jobs)
+      .filter((job) => job.inboxId === inboxId);
     expect(reclaimed).toHaveLength(1);
+    expect(competingClaims.reduce((total, batch) => total + batch.staleRecovered, 0)).toBe(1);
     await service.detectDuplicates(reclaimed[0]);
 
     expect(await inboxStatus(inboxId)).toMatchObject({
@@ -323,6 +336,86 @@ describe.sequential('Phase 9 worker integration', () => {
         geocodeJob?.contributionId ?? '',
       ]),
     ).toBe(originalHintCount);
+  });
+
+  it('publishes a TTL heartbeat and metrics snapshot, then marks bounded SIGTERM shutdown', async () => {
+    const previousMetricsEnabled = process.env.METRICS_ENABLED;
+    const previousShutdownTimeout = process.env.GRACEFUL_SHUTDOWN_TIMEOUT_MS;
+    const previousHeartbeatInterval = process.env.WORKER_HEARTBEAT_INTERVAL_MS;
+    const previousHeartbeatTtl = process.env.WORKER_HEARTBEAT_TTL_SECONDS;
+    Object.assign(process.env, {
+      GRACEFUL_SHUTDOWN_TIMEOUT_MS: '10000',
+      METRICS_ENABLED: 'true',
+      WORKER_HEARTBEAT_INTERVAL_MS: '1000',
+      WORKER_HEARTBEAT_TTL_SECONDS: '10',
+    });
+    const observer = new Redis(environment.REDIS_URL);
+    observer.on('error', () => undefined);
+    const logger = {
+      error: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+    };
+    const lifecycle = new WorkerLifecycleService(
+      { ...environment, NODE_ENV: 'development' },
+      { end: async () => undefined } as unknown as Pool,
+      service,
+      repository,
+      logger as never,
+    );
+
+    try {
+      await lifecycle.onModuleInit();
+      const heartbeat = parseRedisJson<WorkerHeartbeat>(await observer.get(WORKER_HEARTBEAT_KEY));
+      const metrics = parseRedisJson<WorkerMetricsSnapshot>(await observer.get(WORKER_METRICS_KEY));
+      expect(heartbeat).toMatchObject({
+        lastSuccessfulActivityAt: null,
+        schemaVersion: 1,
+        state: 'ready',
+      });
+      expect(heartbeat.queue.integration).toEqual({
+        active: 0,
+        delayed: 0,
+        failed: 0,
+        waiting: 0,
+      });
+      expect(metrics).toMatchObject({
+        schemaVersion: 1,
+        state: 'ready',
+      });
+      expect(await observer.ttl(WORKER_HEARTBEAT_KEY)).toBeGreaterThan(0);
+      expect(await observer.ttl(WORKER_METRICS_KEY)).toBeGreaterThan(0);
+
+      const killedConnections = Number(
+        await observer.call('CLIENT', 'KILL', 'TYPE', 'normal', 'SKIPME', 'yes'),
+      );
+      expect(killedConnections).toBeGreaterThan(0);
+      const recoveredMetrics = await waitForRedisJson<WorkerMetricsSnapshot>(
+        observer,
+        WORKER_METRICS_KEY,
+        (value) =>
+          value.counters.redisUnavailableTotal >= 1 && value.counters.redisRecoveriesTotal >= 1,
+      );
+      expect(recoveredMetrics.dependency.redisAvailable).toBe(true);
+
+      await lifecycle.onApplicationShutdown('SIGTERM');
+      expect(
+        parseRedisJson<WorkerHeartbeat>(await observer.get(WORKER_HEARTBEAT_KEY)),
+      ).toMatchObject({
+        schemaVersion: 1,
+        state: 'stopping',
+      });
+      expect(logger.error).not.toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ signal: 'SIGTERM', status: 'STOPPED' }),
+      );
+    } finally {
+      observer.disconnect();
+      restoreEnvironment('METRICS_ENABLED', previousMetricsEnabled);
+      restoreEnvironment('GRACEFUL_SHUTDOWN_TIMEOUT_MS', previousShutdownTimeout);
+      restoreEnvironment('WORKER_HEARTBEAT_INTERVAL_MS', previousHeartbeatInterval);
+      restoreEnvironment('WORKER_HEARTBEAT_TTL_SECONDS', previousHeartbeatTtl);
+    }
   });
 
   async function insertInbox(input: {
@@ -414,3 +507,31 @@ describe.sequential('Phase 9 worker integration', () => {
     return pool;
   }
 });
+
+function parseRedisJson<T>(value: string | null): T {
+  if (!value) throw new Error('Expected Redis observability value');
+  return JSON.parse(value) as T;
+}
+
+function restoreEnvironment(name: string, value: string | undefined): void {
+  if (value === undefined) Reflect.deleteProperty(process.env, name);
+  else process.env[name] = value;
+}
+
+async function waitForRedisJson<T>(
+  connection: Redis,
+  key: string,
+  predicate: (value: T) => boolean,
+  timeoutMilliseconds = 20_000,
+): Promise<T> {
+  const deadline = Date.now() + timeoutMilliseconds;
+  while (Date.now() < deadline) {
+    const value = await connection.get(key);
+    if (value) {
+      const parsed = JSON.parse(value) as T;
+      if (predicate(parsed)) return parsed;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`Timed out waiting for Redis observability key: ${key}`);
+}

@@ -127,6 +127,7 @@ describe.sequential('public, authentication, contribution, and moderation API', 
       AUTH_VERIFY_GLOBAL_MAX: '100',
       CORS_ALLOWED_ORIGINS: 'http://localhost:3000,http://localhost:3001',
       LOG_LEVEL: 'silent',
+      METRICS_ENABLED: 'true',
       PUBLIC_RATE_LIMIT_MAX: '20',
       RECOMMENDATION_RATE_LIMIT_MAX: '5',
       CONTRIBUTION_RATE_LIMIT_MAX: '100',
@@ -168,6 +169,32 @@ describe.sequential('public, authentication, contribution, and moderation API', 
     });
     expect(response.headers['x-content-type-options']).toBe('nosniff');
     expect(response.headers['x-request-id']).toBe(response.body.meta.requestId);
+    expect(response.headers['cache-control']).toContain('public');
+    expect(response.headers['content-security-policy']).not.toContain("'unsafe-eval'");
+  });
+
+  it('reports bounded liveness and migration-aware readiness without caching', async () => {
+    const live = await request(getApp().getHttpServer())
+      .get('/health/live')
+      .set('X-Correlation-Id', 'phase-11-health')
+      .expect(200);
+    expect(live.body).toEqual({ service: 'pitstop-api', status: 'ok' });
+    expect(live.headers['x-correlation-id']).toBe('phase-11-health');
+    expect(live.headers['cache-control']).toContain('no-store');
+
+    const ready = await request(getApp().getHttpServer()).get('/health/ready').expect(200);
+    expect(ready.body).toEqual({
+      checks: {
+        configuration: 'up',
+        database: 'up',
+        migrations: 'up',
+        queue: 'up',
+        redis: 'up',
+      },
+      service: 'pitstop-api',
+      status: 'ready',
+    });
+    expect(ready.headers['cache-control']).toContain('no-store');
   });
 
   it('requests, delivers, consumes once, persists, and revokes a passwordless session', async () => {
@@ -191,6 +218,7 @@ describe.sequential('public, authentication, contribution, and moderation API', 
     expect(verified.headers['set-cookie'][0]).toContain('HttpOnly');
     expect(verified.headers['set-cookie'][0]).toContain('SameSite=Lax');
     expect(verified.headers['set-cookie'][0]).not.toContain('Secure');
+    expect(verified.headers['set-cookie'][0]).not.toContain('Domain=');
 
     const session = await agent.get('/api/v1/auth/session').expect(200);
     expect(session.body.data).toMatchObject({ authenticated: true, user: { role: 'USER' } });
@@ -213,6 +241,31 @@ describe.sequential('public, authentication, contribution, and moderation API', 
     expect((await agent.get('/api/v1/auth/session').expect(200)).body.data).toEqual({
       authenticated: false,
     });
+  });
+
+  it('rejects an expired USER session and clears the host-only cookie', async () => {
+    if (!pool) throw new Error('Integration database pool is unavailable');
+    const email = `expired-session-${createUlid().toLowerCase()}@example.test`;
+    const agent = request.agent(getApp().getHttpServer());
+    await agent
+      .post('/api/v1/auth/email/request')
+      .send({ email, returnTo: '/activity' })
+      .expect(202);
+    const token = await latestMagicLinkToken(email);
+    const verified = await agent.post('/api/v1/auth/email/verify').send({ token }).expect(200);
+    const userId = String(verified.body.data.user.id);
+    await pool.execute(
+      `UPDATE auth_sessions
+       SET created_at = DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 2 MINUTE),
+           expires_at = DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 1 MINUTE)
+       WHERE user_id = ? AND revoked_at IS NULL`,
+      [userId],
+    );
+
+    const expired = await agent.get('/api/v1/auth/session').expect(200);
+    expect(expired.body.data).toEqual({ authenticated: false });
+    expect(expired.headers['set-cookie'][0]).toContain('Max-Age=0');
+    expect(expired.headers['set-cookie'][0]).not.toContain('Domain=');
   });
 
   it('returns safe invalid and expired link errors without leaking raw tokens', async () => {
@@ -325,6 +378,21 @@ describe.sequential('public, authentication, contribution, and moderation API', 
       returnTo: '/admin',
       user: { role: 'ADMIN' },
     });
+    const diagnostics = await admin.get('/api/v1/admin/diagnostics').expect(200);
+    expect(diagnostics.headers['cache-control']).toContain('no-store');
+    expect(diagnostics.body.data).toMatchObject({
+      dependencies: { database: 'up', queue: 'up', redis: 'up' },
+      service: 'pitstop-api',
+      status: 'ready',
+    });
+    expect(diagnostics.text).not.toMatch(
+      /DATABASE_URL|REDIS_URL|password|sessionToken|latitude|longitude/i,
+    );
+    const metrics = await admin.get('/api/v1/admin/metrics').expect(200);
+    expect(metrics.headers['cache-control']).toContain('no-store');
+    expect(metrics.headers['content-type']).toContain('text/plain');
+    expect(metrics.text).toContain('pitstop_api_requests_total');
+    expect(metrics.text).not.toMatch(new RegExp(verifiedAdmin.body.data.user.id, 'i'));
 
     await expect(getApp().get(AdminModerationRepository).dashboard()).resolves.toBeDefined();
     const dashboard = await admin.get('/api/v1/admin/dashboard').expect(200);
@@ -945,6 +1013,11 @@ describe.sequential('public, authentication, contribution, and moderation API', 
 
   it('serves runtime OpenAPI matching every public route', async () => {
     const response = await request(getApp().getHttpServer()).get('/api/openapi.json').expect(200);
+    const swagger = await request(getApp().getHttpServer()).get('/api/docs/').expect(200);
+    expect(swagger.text).toContain('id="swagger-ui"');
+    expect(swagger.text).toContain('swagger-ui-bundle.js');
+    expect(swagger.headers['content-security-policy']).toContain("script-src 'self'");
+    expect(swagger.headers['content-security-policy']).not.toContain("'unsafe-eval'");
     expect(Object.keys(response.body.paths)).toEqual(
       expect.arrayContaining([
         '/api/v1/public/categories',
@@ -1016,6 +1089,26 @@ describe.sequential('public, authentication, contribution, and moderation API', 
       .expect(401);
     expect(unauthenticated.body.code).toBe('AUTH_REQUIRED');
     expect(unauthenticated.headers['cache-control']).toContain('no-store');
+
+    const missingCredentialsActivity = await request(server)
+      .get('/api/v1/activity?limit=20')
+      .set('Origin', 'http://localhost:3000')
+      .expect(401);
+    expect(missingCredentialsActivity.body).toMatchObject({
+      code: 'AUTH_REQUIRED',
+      status: 401,
+    });
+    expect(missingCredentialsActivity.headers['cache-control']).toContain('no-store');
+
+    const arbitraryOriginActivity = await owner
+      .get('/api/v1/activity?limit=20')
+      .set('Origin', 'https://attacker.example')
+      .expect(403);
+    expect(arbitraryOriginActivity.body).toMatchObject({
+      code: 'CORS_ORIGIN_INVALID',
+      status: 403,
+    });
+    expect(arbitraryOriginActivity.headers['access-control-allow-origin']).toBeUndefined();
 
     await owner
       .post('/api/v1/contributions')
@@ -1592,13 +1685,32 @@ describe.sequential('public, authentication, contribution, and moderation API', 
       .set('Idempotency-Key', `phase10-activity-draft-${createUlid()}`)
       .send({})
       .expect(201);
-    const activity = await owner.get('/api/v1/activity?limit=20').expect(200);
+    const activity = await owner
+      .get('/api/v1/activity?limit=20')
+      .set('Origin', 'http://localhost:3000')
+      .expect(200);
     expect(activity.headers['cache-control']).toContain('no-store');
+    expect(activity.headers['access-control-allow-origin']).toBe('http://localhost:3000');
+    expect(activity.headers['access-control-allow-credentials']).toBe('true');
     expect(activity.body.data.items.map((item: { type: string }) => item.type)).toEqual(
       expect.arrayContaining(['CONTRIBUTION', 'REPORT', 'CONFIRMATION']),
     );
     const reportActivity = await owner.get('/api/v1/activity?type=REPORT&limit=1').expect(200);
     expect(reportActivity.body.data.items).toHaveLength(1);
+    const draftActivity = await owner
+      .get('/api/v1/activity?limit=20&status=DRAFT&type=CONTRIBUTION')
+      .set('Origin', 'http://localhost:3000')
+      .expect(200);
+    expect(draftActivity.body.data.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          placeId: null,
+          placeName: null,
+          status: 'DRAFT',
+          type: 'CONTRIBUTION',
+        }),
+      ]),
+    );
     const invalidActivityStatus = await owner
       .get('/api/v1/activity?type=REPORT&status=APPROVED')
       .expect(400);
@@ -1695,6 +1807,7 @@ describe.sequential('public, authentication, contribution, and moderation API', 
     for (let count = 0; count < 6; count += 1) {
       const response = await request(getApp().getHttpServer())
         .get('/api/v1/public/recommendations')
+        .set('X-Forwarded-For', `203.0.113.${count + 10}`)
         .query({
           latitude: '-6.1380',
           longitude: '106.7030',
@@ -1709,6 +1822,13 @@ describe.sequential('public, authentication, contribution, and moderation API', 
   it('keeps ordinary non-coordinate reads fail-open when Redis is unavailable', async () => {
     await redis?.stop();
     redis = undefined;
+    await request(getApp().getHttpServer()).get('/health/live').expect(200);
+    const readiness = await request(getApp().getHttpServer()).get('/health/ready').expect(503);
+    expect(readiness.body).toMatchObject({
+      checks: { queue: 'down', redis: 'down' },
+      status: 'not_ready',
+    });
+    expect(readiness.headers['cache-control']).toContain('no-store');
     const response = await request(getApp().getHttpServer())
       .get('/api/v1/public/categories')
       .expect(200);

@@ -1,4 +1,4 @@
-import { Controller, Get, Inject, Req } from '@nestjs/common';
+import { Controller, Get, Header, Inject, Req } from '@nestjs/common';
 import {
   ApiInternalServerErrorResponse,
   ApiOkResponse,
@@ -21,6 +21,7 @@ export class PublicCategoriesController {
   ) {}
 
   @Get()
+  @Header('Cache-Control', 'public, max-age=60, stale-while-revalidate=300')
   @ApiOperation({
     operationId: 'listPublicCategories',
     summary: 'List the five public PitStop categories.',

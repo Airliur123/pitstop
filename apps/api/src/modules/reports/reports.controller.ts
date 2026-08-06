@@ -46,6 +46,7 @@ import type { FastifyRequest } from 'fastify';
 import { ApiProblemException } from '../../common/errors/api-problem.exception';
 import { createSuccessResponse } from '../../common/http/response';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
+import { correlationIdForRequest } from '../../http/request-identifiers';
 import {
   activityResponseSchema,
   confirmationRequestSchema,
@@ -90,7 +91,7 @@ export class ReportsController {
         placeId,
         input,
         parseIdempotencyKey(idempotencyKey),
-        request.id,
+        correlationIdForRequest(request),
       ),
       {},
     );
@@ -137,7 +138,7 @@ export class ReportsController {
         placeId,
         input,
         parseIdempotencyKey(idempotencyKey),
-        request.id,
+        correlationIdForRequest(request),
       ),
       {},
     );

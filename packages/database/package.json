@@ -19,11 +19,11 @@
     "test": "vitest run --config vitest.config.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:seed": "tsx src/seed.ts",
-    "db:reset": "tsx src/commands/reset.ts",
-    "db:check": "tsx src/commands/check.ts",
+    "db:seed": "node --import tsx src/seed.ts",
+    "db:reset": "node --import tsx src/commands/reset.ts",
+    "db:check": "node --import tsx src/commands/check.ts",
     "db:test": "vitest run --config vitest.integration.config.ts",
-    "db:studio": "tsx src/commands/studio.ts",
+    "db:studio": "node --import tsx src/commands/studio.ts",
     "clean": "rimraf dist .turbo"
   },
   "dependencies": {

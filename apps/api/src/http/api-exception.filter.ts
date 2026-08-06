@@ -3,6 +3,8 @@ import { Catch, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import type { ApiError, RequestId } from '@pitstop/contracts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
+import { correlationIdForRequest } from './request-identifiers';
+
 interface ExceptionBody {
   readonly code?: unknown;
   readonly details?: unknown;
@@ -21,6 +23,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
     const status = this.resolveStatus(exception);
     if (!(exception instanceof HttpException)) {
       this.logger.error({
+        correlationId: correlationIdForRequest(request),
         requestId: request.id,
         errorName: exception instanceof Error ? exception.name : 'UnknownError',
         errorCode: this.externalErrorCode(exception),
@@ -28,6 +31,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
           exception instanceof TypeError || exception instanceof RangeError
             ? exception.message
             : undefined,
+        stack: exception instanceof Error ? exception.stack : undefined,
       });
     }
     const rawBody = exception instanceof HttpException ? exception.getResponse() : undefined;
@@ -37,7 +41,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
       typeof body.code === 'string'
         ? body.code
         : status === HttpStatus.SERVICE_UNAVAILABLE
-          ? 'DATABASE_UNAVAILABLE'
+          ? this.dependencyErrorCode(exception)
           : status === HttpStatus.INTERNAL_SERVER_ERROR
             ? 'INTERNAL_ERROR'
             : `HTTP_${status}`;
@@ -75,6 +79,9 @@ export class ApiExceptionFilter implements ExceptionFilter {
       reply.header('cache-control', 'no-store, private').header('pragma', 'no-cache');
     }
     reply
+      .header('cache-control', 'no-store, private')
+      .header('pragma', 'no-cache')
+      .header('x-correlation-id', correlationIdForRequest(request))
       .header('x-request-id', request.id)
       .type('application/problem+json')
       .status(status)
@@ -120,5 +127,11 @@ export class ApiExceptionFilter implements ExceptionFilter {
     if (typeof exception !== 'object' || exception === null) return undefined;
     const code = Reflect.get(exception, 'code');
     return typeof code === 'string' ? code : undefined;
+  }
+
+  private dependencyErrorCode(exception: unknown): string {
+    return this.externalErrorCode(exception) === 'ETIMEDOUT'
+      ? 'DEPENDENCY_TIMEOUT'
+      : 'DEPENDENCY_UNAVAILABLE';
   }
 }

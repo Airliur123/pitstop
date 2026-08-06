@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   DeterministicGeocodingAdapter,
@@ -7,7 +7,7 @@ import {
 } from './geocoding.adapters';
 import { calculateDuplicateHint } from './integration-worker.repository';
 import { classifyWorkerError, integrationJobPolicy, PermanentWorkerError } from './job-policy';
-import { withTimeout } from './worker-lifecycle.service';
+import { superviseWorkerRun, withTimeout } from './worker-lifecycle.service';
 
 describe('Phase 9 worker policies', () => {
   it('uses five exponential attempts and classifies safe errors', () => {
@@ -66,5 +66,17 @@ describe('Phase 9 worker policies', () => {
 
   it('enforces a bounded job timeout', async () => {
     await expect(withTimeout(new Promise(() => undefined), 5)).rejects.toThrow('JOB_TIMEOUT');
+  });
+
+  it('escalates an unexpected consumer failure but ignores rejection during shutdown', async () => {
+    const runtimeFailure = new Error('consumer stopped');
+    const handleFailure = vi.fn(async () => undefined);
+
+    await superviseWorkerRun(Promise.reject(runtimeFailure), () => false, handleFailure);
+    expect(handleFailure).toHaveBeenCalledWith(runtimeFailure);
+
+    handleFailure.mockClear();
+    await superviseWorkerRun(Promise.reject(runtimeFailure), () => true, handleFailure);
+    expect(handleFailure).not.toHaveBeenCalled();
   });
 });

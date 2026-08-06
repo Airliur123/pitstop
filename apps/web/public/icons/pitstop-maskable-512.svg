@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">PitStop maskable icon</title>
+  <rect width="512" height="512" fill="#166534"/>
+  <path d="M154 151h126c63 0 100 32 100 86 0 56-39 91-105 91h-51v67h-70V151Zm70 59v60h46c26 0 40-12 40-31 0-20-14-29-40-29h-46Z" fill="#fff"/>
+  <circle cx="359" cy="359" r="37" fill="#f97316"/>
+</svg>
